@@ -233,14 +233,23 @@ Public Class Form1
             If s(i) = "(" Then
                 i += 1
                 Dim fin = Findparenthese(s.Substring(i))
-                Dim lex = AddLexeme("()")
+                Dim lex = AddLexeme(l, "()")
                 Dim atype = Decoupage(s.Substring(i, fin), lex)
                 lex.type = atype
                 i += fin + 1
                 'OPERATEURS MATHEMATIQUES
             ElseIf EstMathOp(s(i)) Then
-                AddLexeme(s(i), Lexeme.VarType.Lmathop)
+                If OpePrio(s(i)) Then
+                    Dim lex = AddLexeme(l)
+                    Dim atype = Decoupage(s.Substring(0, i), lex)
+                    lex.type = atype
+                    AddLexeme(l, s(i), Lexeme.VarType.Lmathop)
+                    lex = AddLexeme(l)
+                    atype = Decoupage(s.Substring(0, i), lex)
+                    lex.type = atype
+                Else
 
+                End If
 
 
 
@@ -249,66 +258,66 @@ Public Class Form1
 
 
                 'ENTIER et FLOAT
-            ElseIf Estint(s(i)) Then
-                Dim j = 1
-                While (Estint(s(i + j)))
-                    j += 1
-                End While
-
-                If (s(i + j) = ".") Then
-                    j += 1
-                    While (Estint(s(i + j)))
+            ElseIf EstInt(s(i)) Then
+                    Dim j = 1
+                    While (EstInt(s(i + j)))
                         j += 1
                     End While
-                    AddLexeme(s.Substring(i, j), Lexeme.VarType.Lfloat)
 
-                ElseIf (s(i + j) = " " Or s(i + j) = ";" Or Estmathop(s(i + j)) Or estpar(s(i + j))) Then
-                    AddLexeme(s.Substring(i, j), Lexeme.VarType.Lint)
-
-                ElseIf (Estvar(s(i + j))) Then
-                    While (Estvar(s(i + j)))
+                    If (s(i + j) = ".") Then
                         j += 1
-                    End While
-                    AddLexeme(s.Substring(i, j), Lexeme.VarType.Lvar)
+                        While (EstInt(s(i + j)))
+                            j += 1
+                        End While
+                        AddLexeme(s.Substring(i, j), Lexeme.VarType.Lfloat)
 
-                Else
-                    Erreur("NUMBER ")
-                    Return False
-                End If
+                    ElseIf (s(i + j) = " " Or s(i + j) = ";" Or EstMathOp(s(i + j)) Or EstPar(s(i + j))) Then
+                        AddLexeme(s.Substring(i, j), Lexeme.VarType.Lint)
 
+                    ElseIf (EstVar(s(i + j))) Then
+                        While (EstVar(s(i + j)))
+                            j += 1
+                        End While
+                        AddLexeme(s.Substring(i, j), Lexeme.VarType.Lvar)
 
-            ElseIf s(i) = "'" Then
-                If s(i + 2) = "'" Then
-                    AddLexeme(s(i + 1), Lexeme.VarType.Lchar)
-                    i += 3
-                Else
-                    Erreur("CHAR ")
-                    Return False
-                End If
-                'STRING
-            ElseIf s(i) = """" Then
-                Dim j = 1
-                While (s(i + j) <> """")
-                    If (i + j >= s.Length - 1) Then
-                        Erreur("STRING ")
+                    Else
+                        Erreur("NUMBER ")
                         Return False
                     End If
-                    j += 1
-                End While
-                AddLexeme(s.Substring(i + 1, j), Lexeme.VarType.Lstring)
-                'NOM DE VAR
-            ElseIf Estvar(s(i)) Then
-                Dim j = 1
-                While (Estvar(s(i + j)))
-                    j += 1
-                End While
-                If Estmot(s.Substring(i, j)) Then
-                    AddLexeme(s.Substring(i, j), Lexeme.VarType.Lmot)
+
+
+                ElseIf s(i) = "'" Then
+                    If s(i + 2) = "'" Then
+                        AddLexeme(s(i + 1), Lexeme.VarType.Lchar)
+                        i += 3
+                    Else
+                        Erreur("CHAR ")
+                        Return False
+                    End If
+                    'STRING
+                ElseIf s(i) = """" Then
+                    Dim j = 1
+                    While (s(i + j) <> """")
+                        If (i + j >= s.Length - 1) Then
+                            Erreur("STRING ")
+                            Return False
+                        End If
+                        j += 1
+                    End While
+                    AddLexeme(s.Substring(i + 1, j), Lexeme.VarType.Lstring)
+                    'NOM DE VAR
+                ElseIf EstVar(s(i)) Then
+                    Dim j = 1
+                    While (EstVar(s(i + j)))
+                        j += 1
+                    End While
+                    If EstMot(s.Substring(i, j)) Then
+                        AddLexeme(s.Substring(i, j), Lexeme.VarType.Lmot)
+                    Else
+                        AddLexeme(s.Substring(i, j), Lexeme.VarType.Lvar)
+                    End If
                 Else
-                    AddLexeme(s.Substring(i, j), Lexeme.VarType.Lvar)
-                End If
-            Else
-                Erreur("DEBUT DE LEXEME INCONNU ")
+                    Erreur("DEBUT DE LEXEME INCONNU ")
                 Return False
             End If
         Next
@@ -344,8 +353,8 @@ Public Class Form1
         Return var
     End Function
 
-    Private Function AddLexeme(valeur As String, Optional type As Lexeme.VarType = Lexeme.VarType.Generic) As Lexeme
-        Dim l = NewNode(courant)
+    Private Function AddLexeme(root As Lexeme, Optional valeur As String = Nothing, Optional type As Lexeme.VarType = Lexeme.VarType.Generic) As Lexeme
+        Dim l = NewNode(root)
         l.lex = New Lexeme(valeur, type)
         Return l.lex
     End Function
@@ -399,6 +408,21 @@ Public Class Form1
         Erreur("Parenthese droite manquante")
         Return s.Length - 1
     End Function
+
+    Private Function Findopeprio(s As String) As Integer
+        For i = 0 To s.Length - 1
+            If OpePrio(s(i)) Then
+                Return i
+            End If
+            If s(i) = "(" Then
+                i += Findparenthese(s.Substring(i + 1))
+            End If
+            If s(i) = "=" Then
+
+            End If
+        Next
+    End Function
+
     Private Function EstChar(s As Char) As Boolean
         Return ((s > "a" And s < "z") Or (s > "A" And s < "Z"))
     End Function
@@ -437,6 +461,9 @@ Public Class Form1
     End Function
     Private Function EstPar(s As Char)
         Return s = "(" Or s = ")"
+    End Function
+    Private Function OpePrio(s As Char)
+        Return s = "*" Or s = "/"
     End Function
     Private Function Erreur(s As String)
         BoxSortie.AppendText("ERREUR : " + s + vbCrLf)
