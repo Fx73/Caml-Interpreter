@@ -182,11 +182,15 @@ Public Class Form1
     End Function
 
     Private Sub Lecture(s As String, start As Integer)
+        If Not Predecoupage(s) Then
+            Exit Sub
+        End If
+
         If Not Decoupage(s, phrase) Then
             Exit Sub
         End If
 
-
+        Lire(ETAT.PHRASE)
 
 
 
@@ -362,7 +366,33 @@ Public Class Form1
         Return False
     End Function
     Private Function Predecoupage(s As String)
+        Dim varname = "aaaa"
+        Dim last = stock
 
+        Dim a = s.IndexOf("""")
+        While (a <> -1)
+            Dim b = s.Substring(a + 1).IndexOf("""")
+            If b = -1 Then
+                Erreur("Fin de string manquant")
+                Return False
+            End If
+            last.suiv = New VarPerso("#" + varname, s.Substring(a + 1, b))
+            s = s.Substring(0, a) + "#" + varname + " " + s.Substring(a + 1 + b)
+            IncrName(varname)
+        End While
+
+        a = s.IndexOf("'")
+        While (a <> -1)
+            Dim b = s.Substring(a + 1).IndexOf("'")
+            If b = -1 Then
+                Erreur("Fin de Char manquant")
+                Return False
+            End If
+            last.suiv = New VarPerso("$" + varname, s.Substring(a + 1, b))
+            s = s.Substring(0, a) + "$" + varname + " " + s.Substring(a + 1 + b)
+            IncrName(varname)
+        End While
+        Return True
     End Function
 #End Region
 
@@ -496,6 +526,20 @@ Public Class Form1
         Next
         Erreur("Parenthese droite manquante")
         Return s.Length - 1
+    End Function
+
+    Private Function IncrName(ByRef s As String)
+        Dim sb As New StringBuilder(s, s.Length)
+        Dim i
+        For i = s.Length To 0 Step -1
+            If (s(i) >= "z") Then
+                sb(i) = "a"
+            Else
+                Exit For
+            End If
+        Next
+        sb(i) = ChrW(AscW(sb(i)) + 1)
+        Return sb.ToString
     End Function
 
     Private Function Findopeprio(s As String) As Integer
