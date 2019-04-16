@@ -4,9 +4,11 @@ Imports System.IO
 #Region "Mes Classes de variables"
 Public Class Lexeme
     Enum VarType
+        Generic
         Lint
         Lfloat
-        Lop
+        Lmathop
+        Llogop
         Lchar
         Lstring
         Lvar
@@ -16,12 +18,19 @@ Public Class Lexeme
 
     Public value As String
     Public type As VarType
-    Public suiv As Lexeme
+    Public node As noeud
+
+    Public Class noeud
+        Public lex As Lexeme
+        Public suiv As noeud
+    End Class
+
     Sub New(ByVal mavaleur As String, montype As VarType)
         value = mavaleur
         type = montype
     End Sub
 End Class
+
 Public Class VarPerso
     Public nom As String
     Public value As Object
@@ -74,11 +83,11 @@ Public Class Form1
 
     'Mes Chaines de stocks de Variables
     Public variables As VarPerso
-    Public phrase As Lexeme
-    Public courant As Lexeme
+    Public phrase As Lexeme = New Lexeme("DEBUT", Lexeme.VarType.Lstring)
+    Public courant As Lexeme = phrase
     Public result
     'Ma Grammaire
-    Public GrammaireMots() As String = New String() {"(", ")", "&&", "||", "let", "true", "false"}
+    Public GrammaireMots() As String = New String() {"(", ")", "let", "true", "false"}
 
     Enum ETAT As Int16
         PHRASE
@@ -94,7 +103,8 @@ Public Class Form1
         LOP
     End Enum
 
-    Public GrammaireOperateurs() As Char = New Char() {"+", "-", "*", "/", "<", ">", "=", "&", "|"}
+    Public GrammaireMathOperateurs() As Char = New Char() {"+", "-", "*", "/", "<", ">", "="}
+    Public GrammaireLogicOperateurs() As Char = New Char() {"<", ">", "=", "&", "|"}
 
 
 #Region "Description Fonctionnelle"
@@ -170,16 +180,10 @@ Public Class Form1
     End Function
 
     Private Sub Lecture(s As String, start As Integer)
-        If Not Decoupage(s) Then
+        If Not Decoupage(s, phrase) Then
             Exit Sub
         End If
-        If (courant.value = "DEBUT") Then
-            courant.suiv = courant
-        Else
-            Erreur("LEXEME DEPART CORROMPU")
-        End If
 
-        Lire(ETAT.PHRASE)
 
 
 
@@ -223,12 +227,29 @@ Public Class Form1
         End Select
     End Function
 
+    Private Function Decoupage(ByRef s As String, l As Lexeme) As Lexeme.VarType
+        For i = 0 To s.Length - 1
+            'PARENTHESE
+            If s(i) = "(" Then
+                i += 1
+                Dim fin = Findparenthese(s.Substring(i))
+                Dim lex = AddLexeme("()")
+                Dim atype = Decoupage(s.Substring(i, fin), lex)
+                lex.type = atype
+                i += fin + 1
+                'OPERATEURS MATHEMATIQUES
+            ElseIf EstMathOp(s(i)) Then
+                AddLexeme(s(i), Lexeme.VarType.Lmathop)
 
-    Private Function Decoupage(ByRef s As String) As Boolean
-        phrase = New Lexeme("DEBUT", Lexeme.VarType.Lstring)
-        For i = 0 To s.Length
-            'ENTIER et FLOAT
-            If Estint(s(i)) Then
+
+
+
+
+
+
+
+                'ENTIER et FLOAT
+            ElseIf Estint(s(i)) Then
                 Dim j = 1
                 While (Estint(s(i + j)))
                     j += 1
@@ -241,7 +262,7 @@ Public Class Form1
                     End While
                     AddLexeme(s.Substring(i, j), Lexeme.VarType.Lfloat)
 
-                ElseIf (s(i + j) = " " Or s(i + j) = ";" Or Estop(s(i + j)) Or estpar(s(i + j))) Then
+                ElseIf (s(i + j) = " " Or s(i + j) = ";" Or Estmathop(s(i + j)) Or estpar(s(i + j))) Then
                     AddLexeme(s.Substring(i, j), Lexeme.VarType.Lint)
 
                 ElseIf (Estvar(s(i + j))) Then
@@ -254,13 +275,8 @@ Public Class Form1
                     Erreur("NUMBER ")
                     Return False
                 End If
-                'OPERATEURS
-            ElseIf Estop(s(i)) Then
-                AddLexeme(s(i), Lexeme.VarType.Lop)
-                'Parenthese
-            ElseIf estpar(s(i)) Then
-                AddLexeme(s(i), Lexeme.VarType.Lmot)
-                'CHAR
+
+
             ElseIf s(i) = "'" Then
                 If s(i + 2) = "'" Then
                     AddLexeme(s(i + 1), Lexeme.VarType.Lchar)
@@ -327,13 +343,28 @@ Public Class Form1
         End If
         Return var
     End Function
-    Private Function AddLexeme(valeur As String, type As Lexeme.VarType)
-        courant.suiv = New Lexeme(valeur, type)
-        courant = courant.suiv
+
+    Private Function AddLexeme(valeur As String, Optional type As Lexeme.VarType = Lexeme.VarType.Generic) As Lexeme
+        Dim l = NewNode(courant)
+        l.lex = New Lexeme(valeur, type)
+        Return l.lex
+    End Function
+
+    Private Function NewNode(ByRef l As Lexeme) As Lexeme.noeud
+        If l.node Is Nothing Then
+            l.node = New Lexeme.noeud
+            Return l.node
+        Else
+            Dim last = l.node
+            While last.suiv IsNot Nothing
+                last = last.suiv
+            End While
+            last.suiv = New Lexeme.noeud
+            Return last.suiv
+        End If
     End Function
 
     Private Function Avancer()
-        courant = courant.suiv
     End Function
 
     Private Function SearchVar(s As String)
@@ -352,27 +383,51 @@ Public Class Form1
 #End Region
 
 #Region "Fonctions utilitaires"
-    Private Function Estchar(s As Char) As Boolean
+    Private Function Findparenthese(s As String) As Integer
+        Dim compt = 1
+        For i = 0 To s.Length - 1
+            If s(i) = "(" Then
+                compt += 1
+            End If
+            If s(i) = ")" Then
+                compt -= 1
+            End If
+            If compt = 0 Then
+                Return i
+            End If
+        Next
+        Erreur("Parenthese droite manquante")
+        Return s.Length - 1
+    End Function
+    Private Function EstChar(s As Char) As Boolean
         Return ((s > "a" And s < "z") Or (s > "A" And s < "Z"))
     End Function
-    Private Function Estint(s As Char) As Boolean
+    Private Function EstInt(s As Char) As Boolean
         Return (s > "9" And s < "0")
     End Function
-    Private Function Estop(s As Char) As Boolean
-        For Each e In GrammaireOperateurs
+    Private Function EstMathOp(s As Char) As Boolean
+        For Each e In GrammaireMathOperateurs
             If e = s Then
                 Return True
             End If
         Next
         Return False
     End Function
-    Private Function Estvar(s As Char)
-        If Estint(s) Or Estchar(s) Or s = "_" Then
+    Private Function EstLogicOp(s As Char) As Boolean
+        For Each e In GrammaireLogicOperateurs
+            If e = s Then
+                Return True
+            End If
+        Next
+        Return False
+    End Function
+    Private Function EstVar(s As Char)
+        If EstInt(s) Or EstChar(s) Or s = "_" Then
             Return True
         End If
         Return False
     End Function
-    Private Function Estmot(s As String) As Boolean
+    Private Function EstMot(s As String) As Boolean
         For Each e In GrammaireMots
             If e = s Then
                 Return True
@@ -380,7 +435,7 @@ Public Class Form1
         Next
         Return False
     End Function
-    Private Function estpar(s As Char)
+    Private Function EstPar(s As Char)
         Return s = "(" Or s = ")"
     End Function
     Private Function Erreur(s As String)
