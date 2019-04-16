@@ -213,6 +213,11 @@ Public Class Form1
             Case ETAT.EXPR
 
             Case ETAT.LBOOL
+                If courant.type = Lexeme.VarType.Lbool Then
+                    Dim val = (courant.value = "true")
+                    Avancer()
+                    Return val
+                End If
 
             Case ETAT.LVAR
                 If courant.type = Lexeme.VarType.Lvar Then
@@ -280,16 +285,20 @@ Public Class Form1
                     j += 1
                 End While
                 AddLexeme(s.Substring(i + 1, j), Lexeme.VarType.Lstring)
-                'NOM DE VAR
+                'NOM DE VAR ET MOTS
             ElseIf Estvar(s(i)) Then
                 Dim j = 1
                 While (Estvar(s(i + j)))
                     j += 1
                 End While
                 If Estmot(s.Substring(i, j)) Then
-                    AddLexeme(s.Substring(i, j), Lexeme.VarType.Lmot)
+                    If estbool(s.Substring(i, j)) Then
+                        AddLexeme(s.Substring(i, j), Lexeme.VarType.Lbool)
+                    Else
+                        AddLexeme(s.Substring(i, j), Lexeme.VarType.Lmot)
+                    End If
                 Else
-                    AddLexeme(s.Substring(i, j), Lexeme.VarType.Lvar)
+                        AddLexeme(s.Substring(i, j), Lexeme.VarType.Lvar)
                 End If
             Else
                 Erreur("DEBUT DE LEXEME INCONNU ")
@@ -382,6 +391,9 @@ Public Class Form1
     End Function
     Private Function estpar(s As Char)
         Return s = "(" Or s = ")"
+    End Function
+    Private Function estbool(s As String)
+        Return s = "true" Or s = "false"
     End Function
     Private Function Erreur(s As String)
         BoxSortie.AppendText("ERREUR : " + s + vbCrLf)
