@@ -87,7 +87,6 @@ Public Class Form1
     Public variables As VarPerso
     Public stock As VarPerso
     Public phrase As Lexeme = New Lexeme("DEBUT", Lexeme.LType.Lstring)
-    Public courant As Lexeme = phrase
     Public result
     'Ma Grammaire
     Public GrammaireMots() As String = New String() {"let", "true", "false"}
@@ -131,6 +130,7 @@ Public Class Form1
         End If
     End Sub
     Private Sub BExec_Click() Handles BExec.Click
+        phrase = New Lexeme("DEBUT", Lexeme.LType.Lstring)
         Dim text = BoxEditeur.Text
         If Not (Suppr_comment(text)) Then
             Exit Sub
@@ -139,7 +139,7 @@ Public Class Form1
         Dim start = 0
         For i = 0 To text.Length - 2
             If text(i) = ";" And text(i + 1) = ";" Then
-                Lecture(text.Substring(start, i + 2 - start), start)
+                Lecture(text.Substring(start, i - start), start)
                 i += 2
                 start = i
             End If
@@ -182,54 +182,27 @@ Public Class Form1
     End Function
 
     Private Sub Lecture(s As String, start As Integer)
+        ''Interpretaion des strings et des chars a part
         If Not Predecoupage(s) Then
             Exit Sub
         End If
 
+        ''Decoupage en arbre de priorité et verification lexicale
         If Not Decoupage(s, phrase) Then
             Exit Sub
         End If
 
-        Lire(ETAT.PHRASE)
+        ''Verification syntaxique de l'arbre
+        AnalyseSynthaxique()
+
 
 
 
     End Sub
 
-    Private Function Lire(state As ETAT) As Object
-        Select Case (state)
+    Private Function AnalyseSynthaxique() As Object
+        Select Case (1)
 
-            Case ETAT.PHRASE
-                If courant.value = "let" Then
-                    Dim var As VarPerso = Lire(ETAT.LVAR)
-                    If var Is Nothing Then
-                        Return False
-                    End If
-                    If courant.value <> "=" Then
-                        Return False
-                    Else
-                        Avancer()
-                    End If
-                    Dim value = Lire(ETAT.EXPR)
-                    If value Is Nothing Then
-                        Return False
-                    End If
-                    var.value = value
-                    Return True
-                Else
-                    Return Lire(ETAT.EXPR)
-                End If
-
-            Case ETAT.EXPR
-
-            Case ETAT.LBOOL
-
-            Case ETAT.LVAR
-                If courant.type = Lexeme.LType.Lvar Then
-                    Return EmpileVar(courant.value)
-                Else
-                    Erreur("NOM DE VARIABLE CORRECT ATTENDU")
-                End If
         End Select
     End Function
 
@@ -237,7 +210,7 @@ Public Class Form1
     Private Function Decoupage(ByRef s As String, l As Lexeme) As Boolean
         'Decoupage en arbre par priorité
         Dim searcher
-        Dim verif
+        s = s.Trim()
 
         'Supprimer les parentheses aux extremités
         If (s(0) = "(" And s(s.Length - 1) = ")") Then
@@ -254,7 +227,7 @@ Public Class Form1
         searcher = Recherche("let ", s)
         If searcher <> -1 Then
             l.value = "let"
-            l.type = True
+            l.type = Lexeme.LType.Phrase
 
             Dim i = searcher + 4
             While i < s.Length - 1
@@ -265,7 +238,7 @@ Public Class Form1
                 End If
             End While
 
-            Decoupage(s.Substring(searcher + 4, i), AddLexeme(l))
+            Decoupage(s.Substring(searcher + 4, i - searcher - 4), AddLexeme(l))
 
             While i < s.Length - 1
                 If s(i) = " " Then
@@ -334,7 +307,7 @@ Public Class Form1
             Return True
         End If
 
-        'Identifier les opérandes
+        'Identifier les opérandes et Analyse syntaxique
         Select Case s(0)
             Case "#"
                 l.value = Extract(s)
@@ -349,16 +322,34 @@ Public Class Form1
             If (s.IndexOf(".") = -1) Then
                 l.value = s
                 l.type = Lexeme.LType.Lint
+                For Each c In s
+                    If (Not EstInt(c)) Then
+                        Erreur("Entier attendu : <<" + s + ">>")
+                        Return False
+                    End If
+                Next
                 Return True
             Else
                 l.value = s
                 l.type = Lexeme.LType.Lfloat
+                For Each c In s.Remove(s.IndexOf("."), 1)
+                    If (Not EstInt(c)) Then
+                        Erreur("Float attendu : <<" + s + ">>")
+                        Return False
+                    End If
+                Next
                 Return True
             End If
         End If
         If EstVar(s(0)) Then
             l.value = s
             l.type = Lexeme.LType.Lvar
+            For Each c In s
+                If (Not EstInt(c)) Then
+                    Erreur("Nom erroné: <<" + s + ">>")
+                    Return False
+                End If
+            Next
             Return True
         End If
 
@@ -476,20 +467,20 @@ Public Class Form1
 #Region "Fonctions utilitaires"
     Private Function Recherche(mot As String, s As String)
         Dim first = s.IndexOf(mot)
-        While (first <> -1 AndAlso IsInParenthese(first, s))
+        While (first <> -1 AndAlso Not IsOutOfParenthese(first, s))
             s.Substring(first + 1).IndexOf(mot)
         End While
         Return first
     End Function
     Private Function Recherche(mot As Char(), s As String)
         Dim first = s.IndexOfAny(mot)
-        While (first <> -1 AndAlso IsInParenthese(first, s))
-            s.Substring(first + 1).IndexOfAny(mot)
+        While (first <> -1 AndAlso Not IsOutOfParenthese(first, s))
+            first = s.Substring(first + 1).IndexOfAny(mot)
         End While
         Return first
     End Function
 
-    Private Function IsInParenthese(index As Integer, s As String) As Boolean
+    Private Function IsOutOfParenthese(index As Integer, s As String) As Boolean
         Dim compt = 0
 
         For i = 0 To index
@@ -571,10 +562,10 @@ Public Class Form1
     End Function
 
     Private Function EstChar(s As Char) As Boolean
-        Return ((s > "a" And s < "z") Or (s > "A" And s < "Z"))
+        Return ((s >= "a" And s <= "z") Or (s >= "A" And s <= "Z"))
     End Function
     Private Function EstInt(s As Char) As Boolean
-        Return (s > "9" And s < "0")
+        Return (s <= "9" And s >= "0")
     End Function
     Private Function EstMathOp(s As Char) As Boolean
         For Each e In GrammaireMathOperateurs
