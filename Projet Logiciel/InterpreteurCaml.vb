@@ -4,9 +4,10 @@ Imports System.IO
 #Region "Mes Classes de variables"
 Public Class Lexeme
     Enum LType
-        Generic
-        Phrase
-        Expr
+        GENERIC
+        PHRASE
+        EXPR
+        LBOOL
         Lint
         Lfloat
         Lmathop
@@ -15,12 +16,11 @@ Public Class Lexeme
         Lstring
         Lvar
         Lmot
-        Lbool
     End Enum
 
     Public value As String
     Public type As LType
-    Public node As noeud
+    Public fils As noeud
 
     Public Class noeud
         Public lex As Lexeme
@@ -44,35 +44,30 @@ Public Class VarPerso
 End Class
 Public Class Vint : Inherits VarPerso
     Public Shadows value As Integer
-    Public Shadows suiv As Vint
     Public Sub New(newnom As String, Optional mavaleur As Integer = Nothing)
         MyBase.New(newnom, mavaleur)
     End Sub
 End Class
 Public Class Vfloat : Inherits VarPerso
     Public Shadows value As Double
-    Public Shadows suiv As Vfloat
     Public Sub New(newnom As String, Optional mavaleur As Double = Nothing)
         MyBase.New(newnom, mavaleur)
     End Sub
 End Class
 Public Class Vbool : Inherits VarPerso
     Public Shadows value As Boolean
-    Public Shadows suiv As Vbool
     Public Sub New(newnom As String, Optional mavaleur As Boolean = Nothing)
         MyBase.New(newnom, mavaleur)
     End Sub
 End Class
 Public Class Vchar : Inherits VarPerso
     Public Shadows value As Char
-    Public Shadows suiv As Vchar
     Public Sub New(newnom As String, Optional mavaleur As Char = Nothing)
         MyBase.New(newnom, mavaleur)
     End Sub
 End Class
 Public Class Vstring : Inherits VarPerso
     Public Shadows value As String
-    Public Shadows suiv As Vstring
     Public Sub New(newnom As String, Optional mavaleur As String = Nothing)
         MyBase.New(newnom, mavaleur)
     End Sub
@@ -86,23 +81,12 @@ Public Class Form1
     'Mes Chaines de stocks de Variables
     Public variables As VarPerso
     Public stock As VarPerso
-    Public phrase As Lexeme = New Lexeme("DEBUT", Lexeme.LType.Lstring)
+    Public arbre As Lexeme = New Lexeme("DEPART", Lexeme.LType.PHRASE)
     Public result
     'Ma Grammaire
     Public GrammaireMots() As String = New String() {"let", "true", "false"}
 
-    Enum ETAT As Int16
-        PHRASE
-        EXPR
-        LINT
-        LFLOAT
-        LBOOL
-        LCHAR
-        LSTRING
-        LMOT
-        LVAR
-        LOP
-    End Enum
+
 
     Public GrammaireMathOperateurs() As Char = New Char() {"+", "-", "*", "/", "<", ">", "="}
     Public GrammaireLogicOperateurs() As Char = New Char() {"<", ">", "=", "!", "&", "|"}
@@ -130,7 +114,6 @@ Public Class Form1
         End If
     End Sub
     Private Sub BExec_Click() Handles BExec.Click
-        phrase = New Lexeme("DEBUT", Lexeme.LType.Lstring)
         Dim text = BoxEditeur.Text
         If Not (Suppr_comment(text)) Then
             Exit Sub
@@ -139,6 +122,7 @@ Public Class Form1
         Dim start = 0
         For i = 0 To text.Length - 2
             If text(i) = ";" And text(i + 1) = ";" Then
+                arbre = New Lexeme("", Lexeme.LType.Lstring)
                 Lecture(text.Substring(start, i - start), start)
                 i += 2
                 start = i
@@ -188,22 +172,113 @@ Public Class Form1
         End If
 
         ''Decoupage en arbre de priorité et verification lexicale
-        If Not Decoupage(s, phrase) Then
+        If Not Decoupage(s, arbre) Then
             Exit Sub
         End If
 
         ''Verification syntaxique de l'arbre
-        AnalyseSynthaxique()
+        If Not AnalyseSynthaxique(arbre) Then
+            Exit Sub
+        End If
 
 
 
 
     End Sub
 
-    Private Function AnalyseSynthaxique() As Object
-        Select Case (1)
+    Private Function AnalyseSynthaxique(l As Lexeme) As Boolean
+        'Transforamtion des variables en leur type
+        Dim f1, f2 As Lexeme.LType
+        If Not Zerofils(l) AndAlso (Unfils(l) OrElse Deuxfils(l)) Then
+            f1 = l.fils.lex.type
+            If f1 = Lexeme.LType.Lvar Then
+                f1 = GetVarType(l.fils.lex.value)
+            End If
+            If Deuxfils(l) Then
+                f2 = l.fils.suiv.lex.type
+                If f2 = Lexeme.LType.Lvar Then
+                    f2 = GetVarType(l.fils.suiv.lex.value)
+                End If
+            End If
+        End If
 
+        'Verification
+        Select Case (l.type)
+            Case Lexeme.LType.PHRASE
+                If Zerofils(l) Then
+                    Return False
+                ElseIf Unfils(l) Then
+                    If EXPRverif(f1) Or f1 = Lexeme.LType.LBOOL Or f1 = Lexeme.LType.Lstring Or f1 = Lexeme.LType.Lchar Then
+                        Return AnalyseSynthaxique(l.fils.lex)
+                    End If
+                ElseIf Deuxfils(l) Then
+                    If EXPRverif(f2) Or f2 = Lexeme.LType.LBOOL Or f2 = Lexeme.LType.Lstring Or f2 = Lexeme.LType.Lchar Then
+                        If (l.fils.lex.type = Lexeme.LType.Lvar) Then
+                            Return AnalyseSynthaxique(l.fils.suiv.lex)
+                        Else
+                            Erreur("Une variable est atttendue pour l'assignation : " + l.value)
+                        End If
+                    End If
+                End If
+
+            Case Lexeme.LType.EXPR
+                If Zerofils(l) Then
+                    Return False
+                ElseIf Unfils(l) Then
+                    If EXPRverif(f1) Then
+                        Return AnalyseSynthaxique(l.fils.lex)
+                    ElseIf f1 = Lexeme.LType.Lvar Then
+                        Erreur("Variable non assignée " + l.fils.lex.value)
+                    Else
+                        Erreur("Une expression correcte est attendue : " + l.value)
+                    End If
+                ElseIf Deuxfils(l) Then
+                    If EXPRverif(f1) And EXPRverif(f2) Then
+                        Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
+                    ElseIf f1 = Lexeme.LType.Lvar Then
+                        Erreur("Variable non assignée " + l.fils.lex.value)
+                    ElseIf f2 = Lexeme.LType.Lvar Then
+                        Erreur("Variable non assignée " + l.fils.suiv.lex.value)
+                    Else
+                        Erreur("Le type attendu de chaque coté est int ou float : " + l.value)
+                    End If
+                End If
+
+            Case Lexeme.LType.LBOOL
+                If Zerofils(l) Then
+                    Return True
+                ElseIf Unfils(l) Then
+                    If (f1 = Lexeme.LType.Lbool) Then
+                        AnalyseSynthaxique(l.fils.lex)
+                    Else
+                        Erreur("Un bool est attendu : " + l.value)
+                    End If
+                ElseIf Deuxfils(l) Then
+                    If (l.value = "&" Or l.value = "|") Then
+                        If (f1 = Lexeme.LType.Lbool And f2 = Lexeme.LType.Lbool) Then
+                            Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
+                        Else
+                            Erreur("Un booleen est attendu de chaque coté" + l.value)
+                        End If
+                    Else
+                        If (EXPRverif(f1) And EXPRverif(f2)) Or (f1 = Lexeme.LType.Lchar And f2 = Lexeme.LType.Lchar) Or (f1 = Lexeme.LType.Lstring And f2 = Lexeme.LType.Lstring) Then
+                            Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
+                        Else
+                            Erreur("Le type doit etre le meme de chaque coté : " + l.value)
+                        End If
+                    End If
+                End If
+
+            Case Lexeme.LType.Lint, Lexeme.LType.Lfloat, Lexeme.LType.Lchar, Lexeme.LType.Lstring, Lexeme.LType.Lmathop, Lexeme.LType.Llogop
+                Return True
+            Case Lexeme.LType.Lmot
+                Erreur("Etrange, il n'y a pas encore de mots ...")
+            Case Lexeme.LType.GENERIC
+                Erreur("Variable non assignée " + l.value)
+            Case Else
+                Erreur("Type inconnu " + l.value)
         End Select
+        Return False
     End Function
 
 
@@ -341,11 +416,16 @@ Public Class Form1
                 Return True
             End If
         End If
+        If Estbool(s) Then
+            l.value = s
+            l.value = Lexeme.LType.LBOOL
+            Return True
+        End If
         If EstVar(s(0)) Then
             l.value = s
             l.type = Lexeme.LType.Lvar
             For Each c In s
-                If (Not EstInt(c)) Then
+                If (Not EstVar(c)) Then
                     Erreur("Nom erroné: <<" + s + ">>")
                     Return False
                 End If
@@ -356,6 +436,7 @@ Public Class Form1
         Erreur("Caractere inconnu : <<" + s(0) + ">>")
         Return False
     End Function
+
     Private Function Predecoupage(s As String)
         Dim varname = "aaaa"
         Dim last = stock
@@ -421,11 +502,11 @@ Public Class Form1
     End Function
 
     Private Function NewNode(ByRef l As Lexeme) As Lexeme.noeud
-        If l.node Is Nothing Then
-            l.node = New Lexeme.noeud
-            Return l.node
+        If l.fils Is Nothing Then
+            l.fils = New Lexeme.noeud
+            Return l.fils
         Else
-            Dim last = l.node
+            Dim last = l.fils
             While last.suiv IsNot Nothing
                 last = last.suiv
             End While
@@ -461,10 +542,28 @@ Public Class Form1
         Return Nothing
     End Function
 
-
 #End Region
 
 #Region "Fonctions utilitaires"
+    Private Function GetVarType(name As String) As Lexeme.LType
+        Dim v = SearchVar(name)
+        If v IsNot Nothing Then
+            Select Case Type.GetTypeCode(v.value.GetType)
+                Case TypeCode.Int32
+                    Return Lexeme.LType.Lint
+                Case TypeCode.Double
+                    Return Lexeme.LType.Lfloat
+                Case TypeCode.Boolean
+                    Return Lexeme.LType.Lbool
+                Case TypeCode.Char
+                    Return Lexeme.LType.Lchar
+                Case TypeCode.String
+                    Return Lexeme.LType.Lstring
+            End Select
+        Else
+            Return Lexeme.LType.Lvar
+        End If
+    End Function
     Private Function Recherche(mot As String, s As String)
         Dim first = s.IndexOf(mot)
         While (first <> -1 AndAlso Not IsOutOfParenthese(first, s))
@@ -533,34 +632,23 @@ Public Class Form1
         Return sb.ToString
     End Function
 
-    Private Function Findopeprio(s As String) As Integer
-        Dim lim = s.Length
-        For Each mot In (GrammaireMots)
-            Dim a = s.IndexOf(mot)
-            If (a <> -1 And lim > a) Then
-                lim = a
-            End If
-        Next
-        For Each mot In (GrammaireLogicOperateurs)
-            Dim a = s.IndexOf(mot)
-            If (a <> -1 And lim > a) Then
-                lim = a
-            End If
-        Next
-        For i = 0 To lim - 1
-            If OpePrio(s(i)) Then
-                Return i
-            End If
-            If s(i) = "(" Then
-                i += Findparenthese(s.Substring(i + 1))
-            End If
-            If s(i) = "=" Then
-                Return 0
-            End If
-        Next
-        Return 0
+    Private Function EXPRverif(t As Lexeme.LType)
+        Return t = Lexeme.LType.EXPR Or t = Lexeme.LType.Lint Or t = Lexeme.LType.Lfloat
     End Function
 
+    Private Function Zerofils(l As Lexeme) As Boolean
+        Return l.fils Is Nothing
+    End Function
+    Private Function Unfils(l As Lexeme) As Boolean
+        Return l.fils.suiv Is Nothing
+    End Function
+    Private Function Deuxfils(l As Lexeme) As Boolean
+        Return l.fils.suiv.suiv Is Nothing
+    End Function
+
+    Private Function EstBool(s As String) As Boolean
+        Return s = "true" Or s = "false"
+    End Function
     Private Function EstChar(s As Char) As Boolean
         Return ((s >= "a" And s <= "z") Or (s >= "A" And s <= "Z"))
     End Function
