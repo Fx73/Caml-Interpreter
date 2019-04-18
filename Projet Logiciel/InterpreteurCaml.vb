@@ -79,10 +79,9 @@ Public Class Form1
     Const QUOTE = """"
 
     'Mes Chaines de stocks de Variables
-    Public variables As VarPerso
-    Public stock As VarPerso
-    Public arbre As Lexeme = New Lexeme("DEPART", Lexeme.LType.PHRASE)
-    Public result
+    Public variables As VarPerso = New VarPerso("@VARIABLES")
+    Public stock As VarPerso = New VarPerso("@STOCK")
+
     'Ma Grammaire
     Public GrammaireMots() As String = New String() {"let", "true", "false"}
 
@@ -114,6 +113,10 @@ Public Class Form1
         End If
     End Sub
     Private Sub BExec_Click() Handles BExec.Click
+        If (BoxEditeur.Text.Trim = "") Then
+            Exit Sub
+        End If
+        BoxSortie.AppendText("Execution : " + vbCrLf)
         Dim text = BoxEditeur.Text
         If Not (Suppr_comment(text)) Then
             Exit Sub
@@ -122,13 +125,12 @@ Public Class Form1
         Dim start = 0
         For i = 0 To text.Length - 2
             If text(i) = ";" And text(i + 1) = ";" Then
-                arbre = New Lexeme("", Lexeme.LType.Lstring)
                 Lecture(text.Substring(start, i - start), start)
                 i += 2
                 start = i
             End If
         Next
-
+        BoxSortie.AppendText(vbCrLf)
     End Sub
 #End Region
 
@@ -166,8 +168,11 @@ Public Class Form1
     End Function
 
     Private Sub Lecture(s As String, start As Integer)
+        Dim arbre = New Lexeme("", Lexeme.LType.Lstring)
+
         ''Interpretaion des strings et des chars a part
-        If Not Predecoupage(s) Then
+        s = Predecoupage(s)
+        If s = "" Then
             Exit Sub
         End If
 
@@ -181,24 +186,72 @@ Public Class Form1
             Exit Sub
         End If
 
-
-
+        ''Execution aveugle
+        Dim result = Execution(arbre)
+        BoxSortie.AppendText(result.ToString + vbCrLf)
 
     End Sub
 
+    Private Function Execution(l As Lexeme) As Object
+        Dim gauche, droite
+        If Not Zerofils(l) Then
+            gauche = l.fils.lex
+            If Not Unfils(l) Then
+                droite = l.fils.suiv.lex
+            End If
+        End If
+
+        Select Case l.value
+            Case "let"
+                Dim var = EmpileVar(Execution(gauche), Execution(droite))
+                Return var.nom + " = " + var.value.ToString
+            Case "|"
+                Return Execution(gauche) Or Execution(droite)
+            Case "&"
+                Return Execution(gauche) And Execution(droite)
+            Case "<"
+                Return Execution(gauche) < Execution(droite)
+            Case ">"
+                Return Execution(gauche) > Execution(droite)
+            Case "="
+                Return Execution(gauche) = Execution(droite)
+            Case "!"
+                Return Execution(gauche) <> Execution(droite)
+            Case "*"
+                Return Execution(gauche) * Execution(droite)
+            Case "/"
+                Return Execution(gauche) / Execution(droite)
+            Case "+"
+                Return Execution(gauche) + Execution(droite)
+            Case "-"
+                Return Execution(gauche) - Execution(droite)
+            Case "()"
+                Return Execution(gauche)
+            Case Else
+                Select Case l.type
+                    Case Lexeme.LType.Lint
+                        Return CInt(l.value)
+                    Case Lexeme.LType.Lfloat
+                        Return CDbl(l.value)
+                    Case Lexeme.LType.LBOOL
+                        Return l.value = "True" Or l.value = "true"
+                    Case Lexeme.LType.Lchar
+                        Return CChar(l.value)
+                    Case Lexeme.LType.Lstring
+                        Return l.value
+                    Case Lexeme.LType.Lvar
+                        Return l.value
+                End Select
+        End Select
+        Return ""
+    End Function
+
     Private Function AnalyseSynthaxique(l As Lexeme) As Boolean
-        'Transforamtion des variables en leur type
         Dim f1, f2 As Lexeme.LType
         If Not Zerofils(l) AndAlso (Unfils(l) OrElse Deuxfils(l)) Then
             f1 = l.fils.lex.type
-            If f1 = Lexeme.LType.Lvar Then
-                f1 = GetVarType(l.fils.lex.value)
-            End If
             If Deuxfils(l) Then
                 f2 = l.fils.suiv.lex.type
-                If f2 = Lexeme.LType.Lvar Then
-                    f2 = GetVarType(l.fils.suiv.lex.value)
-                End If
             End If
         End If
 
@@ -269,12 +322,12 @@ Public Class Form1
                     End If
                 End If
 
-            Case Lexeme.LType.Lint, Lexeme.LType.Lfloat, Lexeme.LType.Lchar, Lexeme.LType.Lstring, Lexeme.LType.Lmathop, Lexeme.LType.Llogop
+            Case Lexeme.LType.Lint, Lexeme.LType.Lfloat, Lexeme.LType.Lchar, Lexeme.LType.Lstring, Lexeme.LType.Lmathop, Lexeme.LType.Llogop, Lexeme.LType.Lvar
                 Return True
             Case Lexeme.LType.Lmot
                 Erreur("Etrange, il n'y a pas encore de mots ...")
             Case Lexeme.LType.GENERIC
-                Erreur("Variable non assignée " + l.value)
+                Erreur("Erreur de variable : " + l.value)
             Case Else
                 Erreur("Type inconnu " + l.value)
         End Select
@@ -313,7 +366,7 @@ Public Class Form1
                 End If
             End While
 
-            Decoupage(s.Substring(searcher + 4, i - searcher - 4), AddLexeme(l))
+            AddLexeme(l, s.Substring(searcher + 4, i - searcher - 4), Lexeme.LType.Lvar)
 
             While i < s.Length - 1
                 If s(i) = " " Then
@@ -418,18 +471,22 @@ Public Class Form1
         End If
         If Estbool(s) Then
             l.value = s
-            l.value = Lexeme.LType.LBOOL
+            l.type = Lexeme.LType.LBOOL
             Return True
         End If
         If EstVar(s(0)) Then
-            l.value = s
-            l.type = Lexeme.LType.Lvar
             For Each c In s
                 If (Not EstVar(c)) Then
                     Erreur("Nom erroné: <<" + s + ">>")
                     Return False
                 End If
             Next
+            If SearchVar(s) Is Nothing Then
+                Erreur("Variable non attribuée : " + s)
+                Return False
+            End If
+            l.value = SearchVar(s).value.ToString
+            l.type = GetVarType(s)
             Return True
         End If
 
@@ -446,52 +503,62 @@ Public Class Form1
             Dim b = s.Substring(a + 1).IndexOf("""")
             If b = -1 Then
                 Erreur("Fin de string manquant")
-                Return False
+                Return ""
             End If
             last.suiv = New VarPerso("#" + varname, s.Substring(a + 1, b))
-            s = s.Substring(0, a) + "#" + varname + " " + s.Substring(a + 1 + b)
-            IncrName(varname)
+            s = s.Substring(0, a) + "#" + varname + " " + s.Substring(a + 2 + b)
+            varname = IncrName(varname)
+            last = last.suiv
+            a = s.IndexOf("""")
         End While
 
         a = s.IndexOf("'")
         While (a <> -1)
-            Dim b = s.Substring(a + 1).IndexOf("'")
-            If b = -1 Then
+            If s(a + 2) <> "'" Then
                 Erreur("Fin de Char manquant")
-                Return False
+                Return ""
             End If
-            last.suiv = New VarPerso("$" + varname, s.Substring(a + 1, b))
-            s = s.Substring(0, a) + "$" + varname + " " + s.Substring(a + 1 + b)
-            IncrName(varname)
+            last.suiv = New VarPerso("$" + varname, s(a + 1))
+            s = s.Substring(0, a) + "$" + varname + " " + s.Substring(a + 3)
+            varname = IncrName(varname)
+            last = last.suiv
+            a = s.IndexOf("'")
         End While
-        Return True
+        Return s
     End Function
 #End Region
 
 #Region "Fonctions manipulation de variables"
-    Private Function EmpileVar(nom As String, Optional type As Lexeme.LType = Nothing, Optional valeur As Object = Nothing)
+    Private Function EmpileVar(nom As String, Optional value As Object = Nothing)
         Dim var = SearchVar(nom)
-        If var Is Nothing Then
-            var = variables
-            While var.suiv IsNot Nothing
-                var = var.suiv
+        If var IsNot Nothing Then
+            Dim prec = variables
+            While (prec.suiv IsNot var)
+                prec = prec.suiv
             End While
-            Select Case type
-                Case Lexeme.LType.Lint
-                    var.suiv = New Vint(nom, valeur)
-                Case Lexeme.LType.Lfloat
-                    var.suiv = New Vfloat(nom, valeur)
-                Case Lexeme.LType.Lbool
-                    var.suiv = New Vbool(nom, valeur)
-                Case Lexeme.LType.Lchar
-                    var.suiv = New Vchar(nom, valeur)
-                Case Lexeme.LType.Lstring
-                    var.suiv = New Vstring(nom, valeur)
-                Case Else
-                    var.suiv = New VarPerso(nom, valeur)
-            End Select
-            var = var.suiv
+            prec.suiv = prec.suiv.suiv
         End If
+
+        Dim type = GetVarType(value)
+        var = variables
+        While var.suiv IsNot Nothing
+            var = var.suiv
+        End While
+        Select Case type
+            Case Lexeme.LType.Lint
+                var.suiv = New Vint(nom, value)
+            Case Lexeme.LType.Lfloat
+                var.suiv = New Vfloat(nom, value)
+            Case Lexeme.LType.LBOOL
+                var.suiv = New Vbool(nom, value)
+            Case Lexeme.LType.Lchar
+                var.suiv = New Vchar(nom, value)
+            Case Lexeme.LType.Lstring
+                var.suiv = New Vstring(nom, value)
+            Case Else
+                var.suiv = New VarPerso(nom, value)
+        End Select
+        var = var.suiv
         Return var
     End Function
 
@@ -513,9 +580,6 @@ Public Class Form1
             last.suiv = New Lexeme.noeud
             Return last.suiv
         End If
-    End Function
-
-    Private Function Avancer()
     End Function
 
     Private Function Extract(s As String)
@@ -542,11 +606,8 @@ Public Class Form1
         Return Nothing
     End Function
 
-#End Region
-
-#Region "Fonctions utilitaires"
-    Private Function GetVarType(name As String) As Lexeme.LType
-        Dim v = SearchVar(name)
+    Private Function GetVarType(name As String, Optional v As Object = Nothing) As Lexeme.LType
+        If v Is Nothing Then v = SearchVar(name)
         If v IsNot Nothing Then
             Select Case Type.GetTypeCode(v.value.GetType)
                 Case TypeCode.Int32
@@ -554,7 +615,7 @@ Public Class Form1
                 Case TypeCode.Double
                     Return Lexeme.LType.Lfloat
                 Case TypeCode.Boolean
-                    Return Lexeme.LType.Lbool
+                    Return Lexeme.LType.LBOOL
                 Case TypeCode.Char
                     Return Lexeme.LType.Lchar
                 Case TypeCode.String
@@ -563,7 +624,12 @@ Public Class Form1
         Else
             Return Lexeme.LType.Lvar
         End If
+        Return Lexeme.LType.GENERIC
     End Function
+#End Region
+
+#Region "Fonctions utilitaires"
+
     Private Function Recherche(mot As String, s As String)
         Dim first = s.IndexOf(mot)
         While (first <> -1 AndAlso Not IsOutOfParenthese(first, s))
@@ -599,8 +665,6 @@ Public Class Form1
         Return compt = 0
     End Function
 
-
-
     Private Function Findparenthese(s As String) As Integer
         Dim compt = 1
         For i = 0 To s.Length - 1
@@ -618,10 +682,10 @@ Public Class Form1
         Return s.Length - 1
     End Function
 
-    Private Function IncrName(ByRef s As String)
+    Private Function IncrName(ByRef s As String) As String
         Dim sb As New StringBuilder(s, s.Length)
         Dim i
-        For i = s.Length To 0 Step -1
+        For i = s.Length - 1 To 0 Step -1
             If (s(i) >= "z") Then
                 sb(i) = "a"
             Else
@@ -647,7 +711,7 @@ Public Class Form1
     End Function
 
     Private Function EstBool(s As String) As Boolean
-        Return s = "true" Or s = "false"
+        Return s = "True" Or s = "False" Or s = "true" Or s = "false"
     End Function
     Private Function EstChar(s As Char) As Boolean
         Return ((s >= "a" And s <= "z") Or (s >= "A" And s <= "Z"))
@@ -691,8 +755,8 @@ Public Class Form1
     Private Function OpePrio(s As Char)
         Return s = "*" Or s = "/"
     End Function
-    Private Function Erreur(s As String)
+    Private Sub Erreur(s As String)
         BoxSortie.AppendText("ERREUR : " + s + vbCrLf)
-    End Function
+    End Sub
 #End Region
 End Class
