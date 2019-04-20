@@ -8,6 +8,7 @@ Public Class Lexeme
         PHRASE
         EXPR
         LBOOL
+        Lfun
         Lint
         Lfloat
         Lmathop
@@ -40,6 +41,12 @@ Public Class VarPerso
     Public Sub New(newnom As String, Optional ByVal mavaleur As Object = Nothing)
         nom = newnom
         value = mavaleur
+    End Sub
+End Class
+Public Class Vfun : Inherits VarPerso
+    Public Shadows value As String
+    Public Sub New(newnom As String, Optional mavaleur As String = Nothing)
+        MyBase.New(newnom, mavaleur)
     End Sub
 End Class
 Public Class Vint : Inherits VarPerso
@@ -138,6 +145,9 @@ Public Class Form1
     Private Function Suppr_comment(ByRef s As String) As Boolean
         Dim sb As New StringBuilder
         Dim skip = 0
+        If s.Length < 2 Then
+            Return True
+        End If
 
         If s(0) = "(" And s(1) = "*" Then
             skip = 1
@@ -241,6 +251,8 @@ Public Class Form1
                         Return l.value
                     Case Lexeme.LType.Lvar
                         Return l.value
+                    Case Lexeme.LType.Lfun
+                        Return l.value.Trim
                 End Select
         End Select
         Return ""
@@ -250,7 +262,7 @@ Public Class Form1
         Dim f1, f2 As Lexeme.LType
         If Not Zerofils(l) AndAlso (Unfils(l) OrElse Deuxfils(l)) Then
             f1 = l.fils.lex.type
-            If Deuxfils(l) Then
+            If Not Unfils(l) AndAlso Deuxfils(l) Then
                 f2 = l.fils.suiv.lex.type
             End If
         End If
@@ -261,11 +273,11 @@ Public Class Form1
                 If Zerofils(l) Then
                     Return False
                 ElseIf Unfils(l) Then
-                    If EXPRverif(f1) Or f1 = Lexeme.LType.LBOOL Or f1 = Lexeme.LType.Lstring Or f1 = Lexeme.LType.Lchar Then
+                    If EXPRverif(f1) Or f1 = Lexeme.LType.LBOOL Or f1 = Lexeme.LType.Lstring Or f1 = Lexeme.LType.Lchar Or f1 = Lexeme.LType.Lfun Then
                         Return AnalyseSynthaxique(l.fils.lex)
                     End If
                 ElseIf Deuxfils(l) Then
-                    If EXPRverif(f2) Or f2 = Lexeme.LType.LBOOL Or f2 = Lexeme.LType.Lstring Or f2 = Lexeme.LType.Lchar Then
+                    If EXPRverif(f2) Or f2 = Lexeme.LType.LBOOL Or f2 = Lexeme.LType.Lstring Or f2 = Lexeme.LType.Lchar Or f2 = Lexeme.LType.Lfun Then
                         If (l.fils.lex.type = Lexeme.LType.Lvar) Then
                             Return AnalyseSynthaxique(l.fils.suiv.lex)
                         Else
@@ -322,7 +334,7 @@ Public Class Form1
                     End If
                 End If
 
-            Case Lexeme.LType.Lint, Lexeme.LType.Lfloat, Lexeme.LType.Lchar, Lexeme.LType.Lstring, Lexeme.LType.Lmathop, Lexeme.LType.Llogop, Lexeme.LType.Lvar
+            Case Lexeme.LType.Lint, Lexeme.LType.Lfloat, Lexeme.LType.Lchar, Lexeme.LType.Lstring, Lexeme.LType.Lmathop, Lexeme.LType.Llogop, Lexeme.LType.Lvar, Lexeme.LType.Lfun
                 Return True
             Case Lexeme.LType.Lmot
                 Erreur("Etrange, il n'y a pas encore de mots ...")
@@ -336,17 +348,17 @@ Public Class Form1
 
 
     Private Function Decoupage(ByRef s As String, l As Lexeme) As Boolean
-        'Decoupage en arbre par priorité
+        'Decoupage en arbre par priorité + Analyse Lexicale
         Dim searcher
         s = s.Trim()
 
         'Supprimer les parentheses aux extremités
         If (s(0) = "(" And s(s.Length - 1) = ")") Then
             l.value = "()"
-            l.type = Lexeme.LType.Generic
+            l.type = Lexeme.LType.GENERIC
 
             Decoupage(s.Substring(1, s.Length - 2), AddLexeme(l))
-
+            SetParentheseType(l)
             Return True
         End If
 
@@ -358,12 +370,8 @@ Public Class Form1
             l.type = Lexeme.LType.Phrase
 
             Dim i = searcher + 4
-            While i < s.Length - 1
-                If EstVar(s(i)) Then
-                    i += 1
-                Else
-                    Exit While
-                End If
+            While i < s.Length - 1 And EstVar(s(i))
+                i += 1
             End While
 
             AddLexeme(l, s.Substring(searcher + 4, i - searcher - 4), Lexeme.LType.Lvar)
@@ -385,7 +393,26 @@ Public Class Form1
             Return True
         End If
 
-        '1 Chercher les séparateurs |
+        '1 Chercher les declarations de fonctions
+        searcher = Recherche("function", s)
+        If searcher <> -1 Then
+            l.value = s.Substring(searcher + 8).Trim
+            l.type = Lexeme.LType.Lfun
+            Dim finarg = s.Substring(searcher + 8).IndexOf("->")
+            If finarg = -1 Then
+                Erreur("Il faut mettre -> après les arguments pour declarer une fonction")
+                Return False
+            End If
+            For i = 8 To finarg + searcher + 7
+                If Not EstVar(s(i)) And s(i) <> " " Then
+                    Erreur("arguments de fonction erronés")
+                    Return False
+                End If
+            Next
+            Return True
+        End If
+
+        '2 Chercher les séparateurs |
         searcher = Recherche("|", s)
         If searcher <> -1 Then
             l.value = "|"
@@ -395,7 +422,7 @@ Public Class Form1
             Return True
         End If
 
-        '2 Chercher les séparateurs &
+        '3 Chercher les séparateurs &
         searcher = Recherche("&", s)
         If searcher <> -1 Then
             l.value = "&"
@@ -405,7 +432,7 @@ Public Class Form1
             Return True
         End If
 
-        '3 Chercher les séparateurs < > = !
+        '4 Chercher les séparateurs < > = !
         searcher = Recherche(New Char() {"<", ">", "=", "!"}, s)
         If searcher <> -1 Then
             l.value = s(searcher)
@@ -415,15 +442,7 @@ Public Class Form1
             Return True
         End If
 
-        '4 Chercher les séparateurs * /
-        searcher = Recherche(New Char() {"*", "/"}, s)
-        If searcher <> -1 Then
-            l.value = s(searcher)
-            l.type = Lexeme.LType.Expr
-            Decoupage(s.Substring(0, searcher), AddLexeme(l))
-            Decoupage(s.Substring(searcher + 1), AddLexeme(l))
-            Return True
-        End If
+
 
         '5 Chercher les séparateurs + -
         searcher = Recherche(New Char() {"+", "-"}, s)
@@ -435,7 +454,17 @@ Public Class Form1
             Return True
         End If
 
-        'Identifier les opérandes et Analyse syntaxique
+        '6 Chercher les séparateurs * /
+        searcher = Recherche(New Char() {"*", "/"}, s)
+        If searcher <> -1 Then
+            l.value = s(searcher)
+            l.type = Lexeme.LType.EXPR
+            Decoupage(s.Substring(0, searcher), AddLexeme(l))
+            Decoupage(s.Substring(searcher + 1), AddLexeme(l))
+            Return True
+        End If
+
+        'Identifier les opérandes
         Select Case s(0)
             Case "#"
                 l.value = Extract(s)
@@ -475,19 +504,43 @@ Public Class Form1
             Return True
         End If
         If EstVar(s(0)) Then
-            For Each c In s
-                If (Not EstVar(c)) Then
-                    Erreur("Nom erroné: <<" + s + ">>")
+            If (s.IndexOf(" ") = -1) Then
+                For Each c In s
+                    If Not EstVar(c) Then
+                        Erreur("Nom erroné: <<" + s + ">>")
+                        Return False
+                    End If
+                Next
+                If GetVar(s) Is Nothing Then
+                    Erreur("Variable non attribuée : " + s)
                     Return False
                 End If
-            Next
-            If SearchVar(s) Is Nothing Then
-                Erreur("Variable non attribuée : " + s)
-                Return False
+                l.value = GetVar(s).value.ToString
+                l.type = GetVarType(s)
+                If l.type = Lexeme.LType.Lfun Then
+                    Decoupage(l.value, AddLexeme(l))
+                    l.value = "()"
+                    SetParentheseType(l)
+                End If
+                Return True
+            Else
+                Dim appel = s.Split(" ")
+                Dim fun = GetVar(appel(0))
+                If fun Is Nothing Then
+                    Erreur("Variable non attribuée : " + s)
+                    Return False
+                End If
+                Dim args = fun.value.substring(0, fun.value.indexof("->")).Trim.Split(" ")
+                If args.Length <> appel.Length - 1 Then
+                    Erreur("Mauvais nombre d'arguments pour " + appel(0))
+                    Return False
+                End If
+                l.value = ReplaceArgFunction(fun.value.substring(fun.value.indexof("->") + 2), args, appel.Skip(1).ToArray)
+                Decoupage(l.value, AddLexeme(l))
+                l.value = "()"
+                SetParentheseType(l)
+                Return True
             End If
-            l.value = SearchVar(s).value.ToString
-            l.type = GetVarType(s)
-            Return True
         End If
 
         Erreur("Caractere inconnu : <<" + s(0) + ">>")
@@ -529,8 +582,14 @@ Public Class Form1
 #End Region
 
 #Region "Fonctions manipulation de variables"
-    Private Function EmpileVar(nom As String, Optional value As Object = Nothing)
-        Dim var = SearchVar(nom)
+    Private Function FindFunctionType(f As String) As Lexeme.LType
+        Dim l = New Lexeme("FunctionTypeFinder", Lexeme.LType.Lfun)
+        Decoupage(f, l)
+        Return l.fils.lex.type
+    End Function
+
+    Private Function EmpileVar(nom As String, Optional value As Object = Nothing) As VarPerso
+        Dim var = GetVar(nom)
         If var IsNot Nothing Then
             Dim prec = variables
             While (prec.suiv IsNot var)
@@ -539,7 +598,7 @@ Public Class Form1
             prec.suiv = prec.suiv.suiv
         End If
 
-        Dim type = GetVarType(value)
+        Dim type = GetVarType(nom, value)
         var = variables
         While var.suiv IsNot Nothing
             var = var.suiv
@@ -555,6 +614,8 @@ Public Class Form1
                 var.suiv = New Vchar(nom, value)
             Case Lexeme.LType.Lstring
                 var.suiv = New Vstring(nom, value)
+            Case Lexeme.LType.Lvar
+                var.suiv = New Vfun(nom, value)
             Case Else
                 var.suiv = New VarPerso(nom, value)
         End Select
@@ -562,7 +623,7 @@ Public Class Form1
         Return var
     End Function
 
-    Private Function AddLexeme(root As Lexeme, Optional valeur As String = Nothing, Optional type As Lexeme.LType = Lexeme.LType.Generic) As Lexeme
+    Private Function AddLexeme(root As Lexeme, Optional valeur As String = Nothing, Optional type As Lexeme.LType = Lexeme.LType.GENERIC) As Lexeme
         Dim l = NewNode(root)
         l.lex = New Lexeme(valeur, type)
         Return l.lex
@@ -582,7 +643,7 @@ Public Class Form1
         End If
     End Function
 
-    Private Function Extract(s As String)
+    Private Function Extract(s As String) As String
         Dim index As VarPerso = stock
         While index.suiv IsNot Nothing
             If index.suiv.nom = s Then
@@ -595,7 +656,7 @@ Public Class Form1
         Return Nothing
     End Function
 
-    Private Function SearchVar(s As String)
+    Private Function GetVar(s As String) As VarPerso
         Dim index As VarPerso = variables
         While index IsNot Nothing
             If index.nom = s Then
@@ -606,10 +667,10 @@ Public Class Form1
         Return Nothing
     End Function
 
-    Private Function GetVarType(name As String, Optional v As Object = Nothing) As Lexeme.LType
-        If v Is Nothing Then v = SearchVar(name)
-        If v IsNot Nothing Then
-            Select Case Type.GetTypeCode(v.value.GetType)
+    Private Function GetVarType(name As String, Optional varvalue As Object = Nothing) As Lexeme.LType
+        If varvalue Is Nothing Then varvalue = GetVar(name).value
+        If varvalue IsNot Nothing Then
+            Select Case Type.GetTypeCode(varvalue.GetType)
                 Case TypeCode.Int32
                     Return Lexeme.LType.Lint
                 Case TypeCode.Double
@@ -619,13 +680,26 @@ Public Class Form1
                 Case TypeCode.Char
                     Return Lexeme.LType.Lchar
                 Case TypeCode.String
-                    Return Lexeme.LType.Lstring
+                    If varvalue.indexof("->") <> -1 Then
+                        Return Lexeme.LType.Lvar
+                    Else
+                        Return Lexeme.LType.Lstring
+                    End If
             End Select
         Else
             Return Lexeme.LType.Lvar
         End If
         Return Lexeme.LType.GENERIC
     End Function
+
+    Private Function ReplaceArgFunction(f As String, arg As String(), argvalue As String())
+        Dim sb = New StringBuilder(f)
+        For i = 0 To arg.Length - 1
+            sb.Replace(arg(i), argvalue(i))
+        Next
+        Return sb.ToString
+    End Function
+
 #End Region
 
 #Region "Fonctions utilitaires"
@@ -643,6 +717,15 @@ Public Class Form1
             first = s.Substring(first + 1).IndexOfAny(mot)
         End While
         Return first
+    End Function
+
+    Private Function SetParentheseType(l As Lexeme)
+        If l.fils.lex.type = Lexeme.LType.LBOOL Then
+            l.type = Lexeme.LType.LBOOL
+        Else
+            l.type = Lexeme.LType.EXPR
+        End If
+        Return True
     End Function
 
     Private Function IsOutOfParenthese(index As Integer, s As String) As Boolean
