@@ -219,10 +219,11 @@ Public Class Form1
             Case "match"
                 Dim base = Execution(gauche)
                 Dim comp = l.fils.suiv
-                While comp.suiv.suiv IsNot Nothing
+                While comp IsNot Nothing
                     If Execution(comp.lex) = base Or comp.lex.type = Lexeme.LType.matchall Then
                         Return Execution(comp.suiv.lex)
                     End If
+                    comp = comp.suiv.suiv
                 End While
             Case "||"
                 Return Execution(gauche) Or Execution(droite)
@@ -269,12 +270,13 @@ Public Class Form1
 
     Private Function AnalyseSynthaxique(l As Lexeme) As Boolean
         Dim f1, f2 As Lexeme.LType
-        If Not Zerofils(l) AndAlso (Unfils(l) OrElse Deuxfils(l)) Then
+        If Not Zerofils(l) Then
             f1 = l.fils.lex.type
-            If Not Unfils(l) AndAlso Deuxfils(l) Then
+            If Not Unfils(l) Then
                 f2 = l.fils.suiv.lex.type
             End If
         End If
+
 
         'Verification
         Select Case (l.type)
@@ -282,11 +284,11 @@ Public Class Form1
                 If Zerofils(l) Then
                     Return False
                 ElseIf Unfils(l) Then
-                    If EXPRverif(f1) Or f1 = Lexeme.LType.LBOOL Or f1 = Lexeme.LType.Lstring Or f1 = Lexeme.LType.Lchar Or f1 = Lexeme.LType.Lfun Then
+                    If EstExpr(f1) Or f1 = Lexeme.LType.LBOOL Or f1 = Lexeme.LType.Lstring Or f1 = Lexeme.LType.Lchar Or f1 = Lexeme.LType.Lfun Then
                         Return AnalyseSynthaxique(l.fils.lex)
                     End If
                 ElseIf Deuxfils(l) Then
-                    If EXPRverif(f2) Or f2 = Lexeme.LType.LBOOL Or f2 = Lexeme.LType.Lstring Or f2 = Lexeme.LType.Lchar Or f2 = Lexeme.LType.Lfun Then
+                    If EstExpr(f2) Or f2 = Lexeme.LType.LBOOL Or f2 = Lexeme.LType.Lstring Or f2 = Lexeme.LType.Lchar Or f2 = Lexeme.LType.Lfun Then
                         If (l.fils.lex.type = Lexeme.LType.Lvar) Then
                             Return AnalyseSynthaxique(l.fils.suiv.lex)
                         Else
@@ -299,7 +301,7 @@ Public Class Form1
                 If Zerofils(l) Then
                     Return False
                 ElseIf Unfils(l) Then
-                    If EXPRverif(f1) Then
+                    If EstExpr(f1) Then
                         Return AnalyseSynthaxique(l.fils.lex)
                     ElseIf f1 = Lexeme.LType.Lvar Then
                         Erreur("Variable non assignée " + l.fils.lex.value)
@@ -307,7 +309,7 @@ Public Class Form1
                         Erreur("Une expression correcte est attendue : " + l.value)
                     End If
                 ElseIf Deuxfils(l) Then
-                    If EXPRverif(f1) And EXPRverif(f2) Then
+                    If EstExpr(f1) And EstExpr(f2) Then
                         Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
                     ElseIf f1 = Lexeme.LType.Lvar Then
                         Erreur("Variable non assignée " + l.fils.lex.value)
@@ -335,7 +337,7 @@ Public Class Form1
                             Erreur("Un booleen est attendu de chaque coté" + l.value)
                         End If
                     Else
-                        If (EXPRverif(f1) And EXPRverif(f2)) Or (f1 = Lexeme.LType.Lchar And f2 = Lexeme.LType.Lchar) Or (f1 = Lexeme.LType.Lstring And f2 = Lexeme.LType.Lstring) Then
+                        If (EstExpr(f1) And EstExpr(f2)) Or (f1 = Lexeme.LType.Lchar And f2 = Lexeme.LType.Lchar) Or (f1 = Lexeme.LType.Lstring And f2 = Lexeme.LType.Lstring) Then
                             Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
                         Else
                             Erreur("Le type doit etre le meme de chaque coté : " + l.value)
@@ -344,22 +346,26 @@ Public Class Form1
                 End If
 
             Case Lexeme.LType.CONS
-                If Zerofils(l) OrElse Unfils(l) OrElse Deuxfils(l) Then
+                If Zerofils(l) Then
+                    Erreur("match...with error")
+                ElseIf Unfils(l) Then
+                    Return AnalyseSynthaxique(l.fils.lex)
+                ElseIf Deuxfils(l) Then
                     Erreur("match...with error")
                 Else
                     Dim comp = l.fils.suiv
                     While (f2 <> Nothing)
                         If f1 <> comp.lex.type And comp.lex.type <> Lexeme.LType.matchall Then
-                            Erreur("match : erreur de type")
+                            Erreur("match : erreur de type, un " + f1.ToString + "est attendu")
                             Return False
                         End If
-                        If comp.suiv Is Nothing OrElse comp.suiv.suiv Is Nothing Then
-                            Erreur("match...with error")
+                        If comp.suiv Is Nothing OrElse EstCons(comp.suiv.lex.type) Then
+                            Erreur("La valeur de retour du " + comp.lex.value.ToString + " du match est erronée")
                             Return False
-                        Else
-                            comp = comp.suiv.suiv
                         End If
+                        If comp.suiv.suiv Is Nothing Then Exit While Else comp = comp.suiv.suiv
                     End While
+                    Return True
                 End If
 
             Case Lexeme.LType.Lint, Lexeme.LType.Lfloat, Lexeme.LType.Lchar, Lexeme.LType.Lstring, Lexeme.LType.Lmathop, Lexeme.LType.Llogop, Lexeme.LType.Lvar, Lexeme.LType.Lfun
@@ -378,7 +384,13 @@ Public Class Form1
         Dim searcher
         s = s.Trim()
 
-        'Supprimer les parentheses aux extremités
+
+        If s = "" Then
+            Erreur("vide interdit")
+            Return False
+        End If
+
+        '0 Supprimer les parentheses aux extremités
         If (s(0) = "(" And s(s.Length - 1) = ")") Then
             l.value = "()"
             l.type = Lexeme.LType.GENERIC
@@ -389,7 +401,7 @@ Public Class Form1
         End If
 
 
-        '0 Chercher les mots connus : Let
+        '1 Chercher les mots connus : Let
         searcher = Recherche("let ", s)
         If searcher <> -1 Then
             l.value = "let"
@@ -415,52 +427,7 @@ Public Class Form1
             Return True
         End If
 
-        '0 Chercher les mots connus : match
-        searcher = Recherche("match ", s)
-        If searcher <> -1 Then
-            l.value = "match"
-            l.type = Lexeme.LType.CONS
-
-            Dim fin = Recherche("matched", s.Substring(searcher))
-            If (fin = -1) Then
-                Erreur("match necessite un matched")
-                Return False
-            End If
-            Dim w = Recherche("with", s.Substring(searcher, fin))
-            If (w = -1) Then
-                Erreur("match necessite un with")
-                Return False
-            End If
-            Decoupage(s.Substring(searcher + 5, w - 5), AddLexeme(l))
-            Dim si = searcher + w
-            si = Recherche("|", s.Substring(si)) + si
-            If Not Estvide(s.Substring(searcher + w + 4, si - (searcher + w + 4))) Then
-                Erreur("| attendu après le with")
-                Return False
-            End If
-            Dim alors = Recherche("->", s.Substring(si + 1, fin - si)) + si + 1
-            If (alors = -1 + si + 1) Then
-                Erreur("| necessite un ->")
-                Return False
-            End If
-            Decoupage(s.Substring(si + 1, alors - si + 1), AddLexeme(l))
-
-            While (Recherche("|", s.Substring(searcher + si)) <> -1)
-                si = Recherche("|", s.Substring(searcher + alors)) + searcher + alors
-                Decoupage(s.Substring(alors + 2, si - alors + 2), AddLexeme(l))
-
-                alors = Recherche("->", s.Substring(si + 1, fin - si)) + si + 1
-                If (alors = -1 + si + 1) Then
-                    Erreur("| necessite un ->")
-                    Return False
-                End If
-                Decoupage(s.Substring(si + 1, alors - si + 1), AddLexeme(l))
-            End While
-            Decoupage(s.Substring(alors + 2), AddLexeme(l))
-            Return True
-        End If
-
-        '1 Chercher les declarations de fonctions
+        '1 Chercher les mots connus : functions
         searcher = Recherche("function", s)
         If searcher <> -1 Then
             l.value = s.Substring(searcher + 8).Trim
@@ -478,6 +445,57 @@ Public Class Form1
             Next
             Return True
         End If
+
+        '1 Chercher les mots connus : match
+        searcher = Recherche("match ", s)
+        If searcher <> -1 Then
+            l.value = "match"
+            l.type = Lexeme.LType.CONS
+
+            Dim fin = Recherche("matched", s.Substring(searcher))
+            If (fin = -1) Then
+                Erreur("match necessite un matched")
+                Return False
+            End If
+            Dim w = Recherche("with", s.Substring(searcher, fin))
+            If (w = -1) Then
+                Erreur("match necessite un with")
+                Return False
+            End If
+            If Not Decoupage(s.Substring(searcher + 5, w - 5), AddLexeme(l)) Then Return False
+
+            Dim si = searcher + w + 4
+            While Estvide(s(si))
+                si += 1
+            End While
+            If s(si) <> "|" Then
+                Erreur("| attendu après le with")
+                Return False
+            End If
+            Dim alors = Recherche("->", s.Substring(si, fin - si)) + si
+            If (alors = -1 + si) Then
+                Erreur("| necessite un ->")
+                Return False
+            End If
+            If Not Decoupage(s.Substring(si + 1, alors - (si + 1)), AddLexeme(l)) Then Return False
+
+
+            While (Recherche("|", s.Substring(alors, fin - alors)) <> -1)
+                si = Recherche("|", s.Substring(alors, fin - alors)) + alors
+                If Not Decoupage(s.Substring(alors + 2, si - (alors + 2)), AddLexeme(l)) Then Return False
+
+                alors = Recherche("->", s.Substring(si, fin - si)) + si
+                If (alors = -1 + si) Then
+                    Erreur("| necessite un ->")
+                    Return False
+                End If
+                If Not Decoupage(s.Substring(si + 1, alors - (si + 1)), AddLexeme(l)) Then Return False
+            End While
+            If Not Decoupage(s.Substring(alors + 2, fin - (alors + 2)), AddLexeme(l)) Then Return False
+            Return True
+        End If
+
+
 
         '2 Chercher les séparateurs ||
         searcher = Recherche("|", s)
@@ -568,7 +586,7 @@ Public Class Form1
                 Return True
             End If
         End If
-        If Estbool(s) Then
+        If EstBool(s) Then
             l.value = s
             l.type = Lexeme.LType.LBOOL
             Return True
@@ -606,12 +624,15 @@ Public Class Form1
                     Return False
                 End If
                 l.value = ReplaceArgFunction(fun.value.substring(fun.value.indexof("->") + 2), args, appel.Skip(1).ToArray)
-                Decoupage(l.value, AddLexeme(l))
+                If Not Decoupage(l.value, AddLexeme(l)) Then
+                    Erreur("La fonction comporte une erreur : " + l.value)
+                    Return False
+                End If
                 l.value = "()"
                 SetParentheseType(l)
                 Return True
+                End If
             End If
-        End If
 
         Erreur("Caractere inconnu : <<" + s(0) + ">>")
         Return False
@@ -762,10 +783,15 @@ Public Class Form1
         Return Lexeme.LType.GENERIC
     End Function
 
-    Private Function ReplaceArgFunction(f As String, arg As String(), argvalue As String())
-        Dim sb = New StringBuilder(f)
+    Private Function ReplaceArgFunction(sb As String, arg As String(), argvalue As String())
         For i = 0 To arg.Length - 1
-            sb.Replace(arg(i), argvalue(i))
+            For j = 0 To sb.Length - arg(i).Length - 1
+                If (sb.Substring(j, arg(i).Length) = arg(i)) Then
+                    If Not ((j > 0 AndAlso EstVar(sb(j - 1))) Or (j + arg(i).Length < sb.Length AndAlso EstVar(sb(j + arg(i).Length)))) Then
+                        sb = sb.Substring(0, j) + argvalue(i) + sb.Substring(j + arg(i).Length)
+                    End If
+                End If
+            Next
         Next
         Return sb.ToString
     End Function
@@ -776,7 +802,7 @@ Public Class Form1
 
     Private Function Recherche(mot As String, s As String) As Integer
         Dim first = s.IndexOf(mot)
-        While (first <> -1 AndAlso Not IsOutOfParenthese(first, s) And Not IsOutOfLoop(first, s))
+        While (first <> -1 AndAlso Not IsOutOfParenthese(first, s) And Not IsOutOfLoop(first, s) AndAlso Not IsMotDouble(mot, first, s))
             s.Substring(first + 1).IndexOf(mot)
         End While
         Return first
@@ -789,15 +815,13 @@ Public Class Form1
         Return first
     End Function
 
-    Private Function SetParentheseType(l As Lexeme)
-        If l.fils.lex.type = Lexeme.LType.LBOOL Then
-            l.type = Lexeme.LType.LBOOL
-        Else
-            l.type = Lexeme.LType.EXPR
-        End If
-        Return True
-    End Function
+    Private Sub SetParentheseType(l As Lexeme)
+        l.type = l.fils.lex.type
+    End Sub
 
+    Private Function IsMotDouble(mot As String, index As Integer, s As String) As Boolean
+        Return mot = s.Substring(index - 1, mot.Length) Or mot = s.Substring(index + 1, mot.Length)
+    End Function
     Private Function IsOutOfParenthese(index As Integer, s As String) As Boolean
         Dim compt = 0
 
@@ -872,10 +896,10 @@ Public Class Form1
         Return sb.ToString
     End Function
 
-    Private Function EXPRverif(t As Lexeme.LType)
+    Private Function EstExpr(t As Lexeme.LType)
         Return t = Lexeme.LType.EXPR Or t = Lexeme.LType.Lint Or t = Lexeme.LType.Lfloat
     End Function
-    Private Function CONSverif(t As Lexeme.LType)
+    Private Function EstCons(t As Lexeme.LType)
         Return t = Lexeme.LType.EXPR Or t = Lexeme.LType.LBOOL Or t = Lexeme.LType.Lchar Or t = Lexeme.LType.Lstring Or t = Lexeme.LType.CONS
     End Function
 
