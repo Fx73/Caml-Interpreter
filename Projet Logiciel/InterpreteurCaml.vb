@@ -91,7 +91,7 @@ Public Class Form1
     Public stock As VarPerso = New VarPerso("@STOCK")
 
     'Ma Grammaire
-    Public GrammaireMots() As String = New String() {"let", "true", "false", "match", "with", "matched", "if", "then", "else", "while", "do", "done"}
+    Public GrammaireMots() As String = New String() {"let", "true", "false", "match", "with", "matched", "while", "do", "done"}
 
 
 
@@ -225,6 +225,10 @@ Public Class Form1
                     End If
                     comp = comp.suiv.suiv
                 End While
+            Case "while"
+                While Execution(gauche)
+                    Execution(droite)
+                End While
             Case "||"
                 Return Execution(gauche) Or Execution(droite)
             Case "&&"
@@ -347,11 +351,17 @@ Public Class Form1
 
             Case Lexeme.LType.CONS
                 If Zerofils(l) Then
-                    Erreur("match...with error")
+                    Erreur("CONS vide")
                 ElseIf Unfils(l) Then
                     Return AnalyseSynthaxique(l.fils.lex)
                 ElseIf Deuxfils(l) Then
-                    Erreur("match...with error")
+                    If Not f1 = Lexeme.LType.LBOOL Then
+                        Erreur("Un booleen est attendu après while")
+                    ElseIf Not EstCons(f2) Then
+                        Erreur("les instructions du while sont erronées")
+                    Else
+                        Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
+                    End If
                 Else
                     Dim comp = l.fils.suiv
                     While (f2 <> Nothing)
@@ -427,7 +437,7 @@ Public Class Form1
             Return True
         End If
 
-        '1 Chercher les mots connus : functions
+        '1 Chercher les mots connus : function
         searcher = Recherche("function", s)
         If searcher <> -1 Then
             l.value = s.Substring(searcher + 8).Trim
@@ -445,6 +455,27 @@ Public Class Form1
             Next
             Return True
         End If
+
+        '1 Chercher les mots connus : while
+        searcher = Recherche("while", s)
+        If searcher <> -1 Then
+            l.value = "while"
+            l.type = Lexeme.LType.CONS
+            Dim milieu = Recherche("do", s.Substring(searcher))
+            If (milieu = -1) Then
+                Erreur("while necessite un do")
+                Return False
+            End If
+            Dim fin = Recherche("done", s.Substring(searcher))
+            If (milieu = -1) Then
+                Erreur("while necessite un done")
+                Return False
+            End If
+            If Not Decoupage(s.Substring(searcher + 5, milieu - (searcher + 5)), AddLexeme(l)) Then Return False
+            Return Decoupage(s.Substring(milieu + 2, fin - (milieu + 2)), AddLexeme(l))
+        End If
+
+
 
         '1 Chercher les mots connus : match
         searcher = Recherche("match ", s)
@@ -820,7 +851,13 @@ Public Class Form1
     End Sub
 
     Private Function IsMotDouble(mot As String, index As Integer, s As String) As Boolean
-        Return mot = s.Substring(index - 1, mot.Length) Or mot = s.Substring(index + 1, mot.Length)
+        If index = 0 Then
+            Return mot = s.Substring(index + 1, mot.Length)
+        ElseIf index = mot.Length - 1 Then
+            Return mot = s.Substring(index - 1, mot.Length)
+        Else
+            Return mot = s.Substring(index - 1, mot.Length) Or mot = s.Substring(index + 1, mot.Length)
+        End If
     End Function
     Private Function IsOutOfParenthese(index As Integer, s As String) As Boolean
         Dim compt = 0
@@ -844,25 +881,35 @@ Public Class Form1
 
     Private Function IsOutOfLoop(index As Integer, s As String) As Boolean
         Dim comptmatch = 0
+        Dim comptwhile = 0
         If s.Length - 8 < index Then
             index = s.Length - 8
         End If
 
         For i = 0 To index
-            If s.Substring(i, 6) = "match " Then
+            If s.Substring(i, 5) = "match" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 5 >= index OrElse EstVar(s(i + 6))) Then
                 comptmatch += 1
             End If
-            If s.Substring(i, 8) = "matched " Then
+            If s.Substring(i, 7) = "matched" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 7 >= index OrElse EstVar(s(i + 8))) Then
                 comptmatch -= 1
+            End If
+            If s.Substring(i, 5) = "while" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 5 >= index OrElse EstVar(s(i + 6))) Then
+                comptwhile += 1
+            End If
+            If s.Substring(i, 4) = "done" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 4 >= index OrElse EstVar(s(i + 5))) Then
+                comptwhile -= 1
             End If
         Next
 
         If comptmatch < 0 Then
             Erreur("whith de trop")
+            Return False
+        End If
+        If comptwhile < 0 Then
+            Erreur("done de trop")
             Return True
         End If
-
-        Return comptmatch = 0
+        Return comptmatch = 0 And comptwhile = 0
     End Function
 
     Private Function Findparenthese(s As String) As Integer
