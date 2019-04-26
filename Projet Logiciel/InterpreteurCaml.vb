@@ -83,7 +83,7 @@ End Class
 #End Region
 Public Class Form1
     'Mes Constantes utilitaires
-    Public path = Application.StartupPath() + "\Default.ml"
+    Public path As String = Application.StartupPath() + "\Default.ml"
     Const QUOTE = """"
 
     'Mes Chaines de stocks de Variables
@@ -102,18 +102,34 @@ Public Class Form1
 #Region "Description Fonctionnelle"
     Private Sub BOpen_Click(sender As Object, e As EventArgs) Handles BOpen.Click
         If Not My.Computer.FileSystem.FileExists(path) Then
+            Erreur("Il n'existe pas de fichier de sauvegarde")
+            Exit Sub
+        End If
+        Try
+            BoxEditeur.Text = My.Computer.FileSystem.ReadAllText(path)
+        Catch ex As Exception
+            Erreur(ex.Message)
+        End Try
+    End Sub
+    Private Sub BExt_Click() Handles BExt.Click
+        If Not My.Computer.FileSystem.FileExists(path) Then
             Try
                 My.Computer.FileSystem.WriteAllText(path, "", False)
             Catch ex As Exception
-                BoxSortie.AppendText(ex.Message + vbCrLf)
+                Erreur(ex.Message)
+                Exit Sub
             End Try
-            BoxSortie.AppendText("Fichier créé : " + path + vbCrLf)
+            Erreur("Fichier créé : " + path)
         End If
-        Try
-            Process.Start(path)
-        Catch ex As Exception
-            BoxSortie.AppendText(ex.Message + vbCrLf)
-        End Try
+        If Not BoxEditeur.Text = "" Then
+            Try
+                My.Computer.FileSystem.WriteAllText(path, BoxEditeur.Text, False)
+            Catch ex As Exception
+                Erreur(ex.Message)
+                Exit Sub
+            End Try
+            Erreur("-Sauvegarde OK-")
+        End If
     End Sub
     Private Sub EnterPressed(sender As Object, e As KeyEventArgs) Handles Me.KeyDown
         If e.KeyCode = Keys.Enter Then
@@ -140,6 +156,7 @@ Public Class Form1
         Next
         BoxSortie.AppendText(vbCrLf)
     End Sub
+
 #End Region
 
 #Region "Interpretation"
@@ -357,7 +374,7 @@ Public Class Form1
                 ElseIf Deuxfils(l) Then
                     If Not f1 = Lexeme.LType.LBOOL Then
                         Erreur("Un booleen est attendu après while")
-                    ElseIf Not EstCons(f2) Then
+                    ElseIf Not EstCons(f2) And f2 <> Lexeme.LType.PHRASE Then
                         Erreur("les instructions du while sont erronées")
                     Else
                         Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
@@ -461,13 +478,13 @@ Public Class Form1
         If searcher <> -1 Then
             l.value = "while"
             l.type = Lexeme.LType.CONS
-            Dim milieu = Recherche("do", s.Substring(searcher))
-            If (milieu = -1) Then
+            Dim milieu = Recherche("do", s.Substring(searcher + 5)) + 5
+            If (milieu = -1 + 5) Then
                 Erreur("while necessite un do")
                 Return False
             End If
-            Dim fin = Recherche("done", s.Substring(searcher))
-            If (milieu = -1) Then
+            Dim fin = Recherche("done", s.Substring(searcher + 5)) + 5
+            If (milieu = -1 + 5) Then
                 Erreur("while necessite un done")
                 Return False
             End If
@@ -483,7 +500,7 @@ Public Class Form1
             l.value = "match"
             l.type = Lexeme.LType.CONS
 
-            Dim fin = Recherche("matched", s.Substring(searcher))
+            Dim fin = Recherche("matched", s.Substring(searcher + 5))
             If (fin = -1) Then
                 Erreur("match necessite un matched")
                 Return False
@@ -533,9 +550,7 @@ Public Class Form1
         If searcher <> -1 Then
             l.value = "||"
             l.type = Lexeme.LType.LBOOL
-            Decoupage(s.Substring(0, searcher), AddLexeme(l))
-            Decoupage(s.Substring(searcher + 2), AddLexeme(l))
-            Return True
+            Return Decoupage(s.Substring(0, searcher), AddLexeme(l)) And Decoupage(s.Substring(searcher + 2), AddLexeme(l))
         End If
 
         '3 Chercher les séparateurs &&
@@ -543,9 +558,7 @@ Public Class Form1
         If searcher <> -1 Then
             l.value = "&&"
             l.type = Lexeme.LType.LBOOL
-            Decoupage(s.Substring(0, searcher), AddLexeme(l))
-            Decoupage(s.Substring(searcher + 2), AddLexeme(l))
-            Return True
+            Return Decoupage(s.Substring(0, searcher), AddLexeme(l)) And Decoupage(s.Substring(searcher + 2), AddLexeme(l))
         End If
 
         '4 Chercher les séparateurs < > = !
@@ -553,9 +566,7 @@ Public Class Form1
         If searcher <> -1 Then
             l.value = s(searcher)
             l.type = Lexeme.LType.LBOOL
-            Decoupage(s.Substring(0, searcher), AddLexeme(l))
-            Decoupage(s.Substring(searcher + 1), AddLexeme(l))
-            Return True
+            Return Decoupage(s.Substring(0, searcher), AddLexeme(l)) And Decoupage(s.Substring(searcher + 1), AddLexeme(l))
         End If
 
 
@@ -565,9 +576,7 @@ Public Class Form1
         If searcher <> -1 Then
             l.value = s(searcher)
             l.type = Lexeme.LType.EXPR
-            Decoupage(s.Substring(0, searcher), AddLexeme(l))
-            Decoupage(s.Substring(searcher + 1), AddLexeme(l))
-            Return True
+            Return Decoupage(s.Substring(0, searcher), AddLexeme(l)) And Decoupage(s.Substring(searcher + 1), AddLexeme(l))
         End If
 
         '6 Chercher les séparateurs * /
@@ -575,9 +584,8 @@ Public Class Form1
         If searcher <> -1 Then
             l.value = s(searcher)
             l.type = Lexeme.LType.EXPR
-            Decoupage(s.Substring(0, searcher), AddLexeme(l))
-            Decoupage(s.Substring(searcher + 1), AddLexeme(l))
-            Return True
+            Return Decoupage(s.Substring(0, searcher), AddLexeme(l)) And Decoupage(s.Substring(searcher + 1), AddLexeme(l))
+
         End If
 
         'Identifier les opérandes
@@ -830,11 +838,10 @@ Public Class Form1
 #End Region
 
 #Region "Fonctions utilitaires"
-
     Private Function Recherche(mot As String, s As String) As Integer
         Dim first = s.IndexOf(mot)
-        While (first <> -1 AndAlso Not IsOutOfParenthese(first, s) And Not IsOutOfLoop(first, s) AndAlso Not IsMotDouble(mot, first, s))
-            s.Substring(first + 1).IndexOf(mot)
+        While first <> -1 AndAlso (Not IsOutOfParenthese(first, s) OrElse Not IsOutOfLoop(first, s) OrElse IsMotDouble(mot, first, s))
+            first = s.Substring(first + 1).IndexOf(mot)
         End While
         Return first
     End Function
@@ -853,7 +860,7 @@ Public Class Form1
     Private Function IsMotDouble(mot As String, index As Integer, s As String) As Boolean
         If index = 0 Then
             Return mot = s.Substring(index + 1, mot.Length)
-        ElseIf index = mot.Length - 1 Then
+        ElseIf index = s.Length - mot.Length Then
             Return mot = s.Substring(index - 1, mot.Length)
         Else
             Return mot = s.Substring(index - 1, mot.Length) Or mot = s.Substring(index + 1, mot.Length)
@@ -882,21 +889,21 @@ Public Class Form1
     Private Function IsOutOfLoop(index As Integer, s As String) As Boolean
         Dim comptmatch = 0
         Dim comptwhile = 0
-        If s.Length - 8 < index Then
-            index = s.Length - 8
+        If index = 0 Then
+            Return True
         End If
 
         For i = 0 To index
-            If s.Substring(i, 5) = "match" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 5 >= index OrElse EstVar(s(i + 6))) Then
+            If i <= index - 5 AndAlso (s.Substring(i, 5) = "match" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 5 >= index OrElse EstVar(s(i + 6)))) Then
                 comptmatch += 1
             End If
-            If s.Substring(i, 7) = "matched" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 7 >= index OrElse EstVar(s(i + 8))) Then
+            If i <= index - 7 AndAlso (s.Substring(i, 7) = "matched" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 7 >= index OrElse EstVar(s(i + 8)))) Then
                 comptmatch -= 1
             End If
-            If s.Substring(i, 5) = "while" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 5 >= index OrElse EstVar(s(i + 6))) Then
+            If i <= index - 5 AndAlso (s.Substring(i, 5) = "while" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 5 >= index OrElse EstVar(s(i + 6)))) Then
                 comptwhile += 1
             End If
-            If s.Substring(i, 4) = "done" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 4 >= index OrElse EstVar(s(i + 5))) Then
+            If i <= index - 4 AndAlso (s.Substring(i, 4) = "done" And (i = 0 OrElse EstVar(s(i - 1))) And (i + 4 >= index OrElse EstVar(s(i + 5)))) Then
                 comptwhile -= 1
             End If
         Next

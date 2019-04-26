@@ -63,7 +63,7 @@ Partial Class Form1
         Me.BOpen.Name = "BOpen"
         Me.BOpen.Size = New System.Drawing.Size(168, 23)
         Me.BOpen.TabIndex = 3
-        Me.BOpen.Text = "Ouvrir externe"
+        Me.BOpen.Text = "Restaurer"
         Me.BOpen.UseVisualStyleBackColor = True
         '
         'BExt
@@ -72,7 +72,7 @@ Partial Class Form1
         Me.BExt.Name = "BExt"
         Me.BExt.Size = New System.Drawing.Size(168, 23)
         Me.BExt.TabIndex = 4
-        Me.BExt.Text = "Executer externe"
+        Me.BExt.Text = "Sauvegarder"
         Me.BExt.UseVisualStyleBackColor = True
         '
         'Form1
