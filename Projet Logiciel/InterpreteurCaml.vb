@@ -221,7 +221,7 @@ Public Class Form1
     End Sub
 
     Private Function Execution(l As Lexeme) As Object
-        Dim gauche, droite
+        Dim gauche, droite As Lexeme
         If Not Zerofils(l) Then
             gauche = l.fils.lex
             If Not Unfils(l) Then
@@ -231,7 +231,7 @@ Public Class Form1
 
         Select Case l.value
             Case "let"
-                Dim var = EmpileVar(Execution(gauche), Execution(droite))
+                Dim var = EmpileVar(gauche.value, Execution(droite))
                 Return var.nom + " = " + var.value.ToString
             Case "match"
                 Dim base = Execution(gauche)
@@ -281,7 +281,7 @@ Public Class Form1
                     Case Lexeme.LType.Lstring
                         Return l.value
                     Case Lexeme.LType.Lvar
-                        Return l.value
+                        Return GetVar(l.value).value
                     Case Lexeme.LType.Lfun
                         Return l.value.Trim
                 End Select
@@ -290,11 +290,13 @@ Public Class Form1
     End Function
 
     Private Function AnalyseSynthaxique(l As Lexeme) As Boolean
-        Dim f1, f2 As Lexeme.LType
+        Dim gt, dt As Lexeme.LType
         If Not Zerofils(l) Then
-            f1 = l.fils.lex.type
+            gt = l.fils.lex.type
+            If gt = Lexeme.LType.Lvar Then gt = GetVarType(l.fils.lex.value)
             If Not Unfils(l) Then
-                f2 = l.fils.suiv.lex.type
+                dt = l.fils.suiv.lex.type
+                If dt = Lexeme.LType.Lvar Then dt = GetVarType(l.fils.suiv.lex.value)
             End If
         End If
 
@@ -305,11 +307,11 @@ Public Class Form1
                 If Zerofils(l) Then
                     Return False
                 ElseIf Unfils(l) Then
-                    If EstExpr(f1) Or f1 = Lexeme.LType.LBOOL Or f1 = Lexeme.LType.Lstring Or f1 = Lexeme.LType.Lchar Or f1 = Lexeme.LType.Lfun Then
+                    If EstCons(gt) Or gt = Lexeme.LType.Lfun Then
                         Return AnalyseSynthaxique(l.fils.lex)
                     End If
                 ElseIf Deuxfils(l) Then
-                    If EstExpr(f2) Or f2 = Lexeme.LType.LBOOL Or f2 = Lexeme.LType.Lstring Or f2 = Lexeme.LType.Lchar Or f2 = Lexeme.LType.Lfun Then
+                    If EstCons(dt) Or dt = Lexeme.LType.Lfun Then
                         If (l.fils.lex.type = Lexeme.LType.Lvar) Then
                             Return AnalyseSynthaxique(l.fils.suiv.lex)
                         Else
@@ -322,20 +324,14 @@ Public Class Form1
                 If Zerofils(l) Then
                     Return False
                 ElseIf Unfils(l) Then
-                    If EstExpr(f1) Then
+                    If EstExpr(gt) Then
                         Return AnalyseSynthaxique(l.fils.lex)
-                    ElseIf f1 = Lexeme.LType.Lvar Then
-                        Erreur("Variable non assignée " + l.fils.lex.value)
                     Else
                         Erreur("Une expression correcte est attendue : " + l.value)
                     End If
                 ElseIf Deuxfils(l) Then
-                    If EstExpr(f1) And EstExpr(f2) Then
+                    If EstExpr(gt) And EstExpr(dt) Then
                         Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
-                    ElseIf f1 = Lexeme.LType.Lvar Then
-                        Erreur("Variable non assignée " + l.fils.lex.value)
-                    ElseIf f2 = Lexeme.LType.Lvar Then
-                        Erreur("Variable non assignée " + l.fils.suiv.lex.value)
                     Else
                         Erreur("Le type attendu de chaque coté est int ou float : " + l.value)
                     End If
@@ -345,20 +341,20 @@ Public Class Form1
                 If Zerofils(l) Then
                     Return True
                 ElseIf Unfils(l) Then
-                    If (f1 = Lexeme.LType.LBOOL) Then
+                    If gt = Lexeme.LType.LBOOL Then
                         AnalyseSynthaxique(l.fils.lex)
                     Else
                         Erreur("Un bool est attendu : " + l.value)
                     End If
                 ElseIf Deuxfils(l) Then
                     If (l.value = "&&" Or l.value = "||") Then
-                        If (f1 = Lexeme.LType.LBOOL And f2 = Lexeme.LType.LBOOL) Then
+                        If (gt = Lexeme.LType.LBOOL And dt = Lexeme.LType.LBOOL) Then
                             Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
                         Else
                             Erreur("Un booleen est attendu de chaque coté" + l.value)
                         End If
                     Else
-                        If (EstExpr(f1) And EstExpr(f2)) Or (f1 = Lexeme.LType.Lchar And f2 = Lexeme.LType.Lchar) Or (f1 = Lexeme.LType.Lstring And f2 = Lexeme.LType.Lstring) Then
+                        If (EstExpr(gt) And EstExpr(dt)) Or (gt = Lexeme.LType.Lchar And dt = Lexeme.LType.Lchar) Or (gt = Lexeme.LType.Lstring And dt = Lexeme.LType.Lstring) Then
                             Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
                         Else
                             Erreur("Le type doit etre le meme de chaque coté : " + l.value)
@@ -372,18 +368,18 @@ Public Class Form1
                 ElseIf Unfils(l) Then
                     Return AnalyseSynthaxique(l.fils.lex)
                 ElseIf Deuxfils(l) Then
-                    If Not f1 = Lexeme.LType.LBOOL Then
+                    If Not gt = Lexeme.LType.LBOOL Then
                         Erreur("Un booleen est attendu après while")
-                    ElseIf Not EstCons(f2) And f2 <> Lexeme.LType.PHRASE Then
+                    ElseIf Not EstCons(dt) And dt <> Lexeme.LType.PHRASE Then
                         Erreur("les instructions du while sont erronées")
                     Else
                         Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
                     End If
                 Else
                     Dim comp = l.fils.suiv
-                    While (f2 <> Nothing)
-                        If f1 <> comp.lex.type And comp.lex.type <> Lexeme.LType.matchall Then
-                            Erreur("match : erreur de type, un " + f1.ToString + "est attendu")
+                    While (dt <> Nothing)
+                        If gt <> comp.lex.type And comp.lex.type <> Lexeme.LType.matchall Then
+                            Erreur("match : erreur de type, un " + gt.ToString + "est attendu")
                             Return False
                         End If
                         If comp.suiv Is Nothing OrElse EstCons(comp.suiv.lex.type) Then
@@ -398,7 +394,7 @@ Public Class Form1
             Case Lexeme.LType.Lint, Lexeme.LType.Lfloat, Lexeme.LType.Lchar, Lexeme.LType.Lstring, Lexeme.LType.Lmathop, Lexeme.LType.Llogop, Lexeme.LType.Lvar, Lexeme.LType.Lfun
                 Return True
             Case Lexeme.LType.GENERIC
-                Erreur("Erreur de variable : " + l.value)
+                Erreur("Erreur d'atribution de variable : " + l.value)
             Case Else
                 Erreur("Type inconnu " + l.value)
         End Select
@@ -642,12 +638,13 @@ Public Class Form1
                     Erreur("Variable non attribuée : " + s)
                     Return False
                 End If
-                l.value = GetVar(s).value.ToString
-                l.type = GetVarType(s)
-                If l.type = Lexeme.LType.Lfun Then
+                l.value = s
+                If GetVarType(s) = Lexeme.LType.Lfun Then
                     Decoupage(l.value, AddLexeme(l))
                     l.value = "()"
                     SetParentheseType(l)
+                Else
+                    l.type = Lexeme.LType.Lvar
                 End If
                 Return True
             Else
@@ -720,7 +717,7 @@ Public Class Form1
 
     Private Function EmpileVar(nom As String, Optional value As Object = Nothing) As VarPerso
         Dim var = GetVar(nom)
-        If var IsNot Nothing Then
+        If var.value IsNot Nothing Then
             Dim prec = variables
             While (prec.suiv IsNot var)
                 prec = prec.suiv
@@ -794,7 +791,7 @@ Public Class Form1
             End If
             index = index.suiv
         End While
-        Return Nothing
+        Return New VarPerso(s)
     End Function
 
     Private Function GetVarType(name As String, Optional varvalue As Object = Nothing) As Lexeme.LType
@@ -954,7 +951,7 @@ Public Class Form1
         Return t = Lexeme.LType.EXPR Or t = Lexeme.LType.Lint Or t = Lexeme.LType.Lfloat
     End Function
     Private Function EstCons(t As Lexeme.LType)
-        Return t = Lexeme.LType.EXPR Or t = Lexeme.LType.LBOOL Or t = Lexeme.LType.Lchar Or t = Lexeme.LType.Lstring Or t = Lexeme.LType.CONS
+        Return EstExpr(t) Or t = Lexeme.LType.LBOOL Or t = Lexeme.LType.Lchar Or t = Lexeme.LType.Lstring Or t = Lexeme.LType.CONS Or t = Lexeme.LType.Lvar
     End Function
 
     Private Function Zerofils(l As Lexeme) As Boolean
