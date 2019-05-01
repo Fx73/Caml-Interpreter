@@ -83,12 +83,13 @@ End Class
 #End Region
 Public Class Form1
     'Mes Constantes utilitaires
-    Public path As String = Application.StartupPath() + "\Default.ml"
+    Public path As String = Application.StartupPath() + "\DefaultSave.ml"
     Const QUOTE = """"
 
     'Mes Chaines de stocks de Variables
     Public variables As VarPerso = New VarPerso("@VARIABLES")
     Public stock As VarPerso = New VarPerso("@STOCK")
+    Dim varname = "aaaa"
 
     'Ma Grammaire
     Public GrammaireMots() As String = New String() {"let", "true", "false", "match", "with", "matched", "while", "do", "done"}
@@ -102,7 +103,8 @@ Public Class Form1
 #Region "Description Fonctionnelle"
     Private Sub BOpen_Click(sender As Object, e As EventArgs) Handles BOpen.Click
         If Not My.Computer.FileSystem.FileExists(path) Then
-            Erreur("Il n'existe pas de fichier de sauvegarde")
+            BoxSortie.AppendText(" Fichier de test integré" + vbCrLf)
+            BoxEditeur.Text = My.Resources.TestFile
             Exit Sub
         End If
         Try
@@ -119,7 +121,7 @@ Public Class Form1
                 Erreur(ex.Message)
                 Exit Sub
             End Try
-            Erreur("Fichier créé : " + path)
+            BoxSortie.AppendText("Fichier créé : " + path + vbCrLf)
         End If
         If Not BoxEditeur.Text = "" Then
             Try
@@ -128,7 +130,7 @@ Public Class Form1
                 Erreur(ex.Message)
                 Exit Sub
             End Try
-            Erreur("-Sauvegarde OK-")
+            BoxSortie.AppendText("-Sauvegarde OK-" + vbCrLf)
         End If
     End Sub
     Private Sub EnterPressed(sender As Object, e As KeyEventArgs) Handles Me.KeyDown
@@ -178,7 +180,7 @@ Public Class Form1
                 text(i) = text(i).Substring(a)
                 skip -= 1
                 If skip < 0 Then
-                    BoxSortie.AppendText("Erreur, fin de commentaire en trop" + vbCrLf)
+                    Erreur("Erreur, fin de commentaire en trop")
                     Return False
                 End If
             End While
@@ -188,7 +190,7 @@ Public Class Form1
             skip += 1
         Next
         If skip > 1 Then
-            BoxSortie.AppendText("Attention,fin de commentaires manquantes" + vbCrLf)
+            Erreur("Attention,fin de commentaires manquantes")
         End If
 
         s = sb.ToString
@@ -216,8 +218,9 @@ Public Class Form1
 
         ''Execution aveugle
         Dim result = Execution(arbre)
-        BoxSortie.AppendText(result.ToString + vbCrLf)
-
+        If result IsNot Nothing Then
+            BoxSortie.AppendText(result.ToString + vbCrLf)
+        End If
     End Sub
 
     Private Function Execution(l As Lexeme) As Object
@@ -232,12 +235,16 @@ Public Class Form1
         Select Case l.value
             Case "let"
                 Dim var = EmpileVar(gauche.value, Execution(droite))
-                Return var.nom + " = " + var.value.ToString
+                If droite.type = Lexeme.LType.Lfun Then
+                    Return var.nom + " = function"
+                Else
+                    Return var.nom + " = " + var.value.ToString
+                End If
             Case "match"
                 Dim base = Execution(gauche)
                 Dim comp = l.fils.suiv
                 While comp IsNot Nothing
-                    If Execution(comp.lex) = base Or comp.lex.type = Lexeme.LType.matchall Then
+                    If comp.lex.type = Lexeme.LType.matchall OrElse Execution(comp.lex) = base Then
                         Return Execution(comp.suiv.lex)
                     End If
                     comp = comp.suiv.suiv
@@ -354,7 +361,7 @@ Public Class Form1
                             Erreur("Un booleen est attendu de chaque coté" + l.value)
                         End If
                     Else
-                        If (EstExpr(gt) And EstExpr(dt)) Or (gt = Lexeme.LType.Lchar And dt = Lexeme.LType.Lchar) Or (gt = Lexeme.LType.Lstring And dt = Lexeme.LType.Lstring) Then
+                        If (EstExpr(gt) And EstExpr(dt)) Or (gt = Lexeme.LType.Lchar And dt = Lexeme.LType.Lchar) Or (gt = Lexeme.LType.Lstring And dt = Lexeme.LType.Lstring) Or (gt = Lexeme.LType.LBOOL And dt = Lexeme.LType.LBOOL) Then
                             Return AnalyseSynthaxique(l.fils.lex) And AnalyseSynthaxique(l.fils.suiv.lex)
                         Else
                             Erreur("Le type doit etre le meme de chaque coté : " + l.value)
@@ -382,7 +389,7 @@ Public Class Form1
                             Erreur("match : erreur de type, un " + gt.ToString + "est attendu")
                             Return False
                         End If
-                        If comp.suiv Is Nothing OrElse EstCons(comp.suiv.lex.type) Then
+                        If comp.suiv Is Nothing OrElse Not EstCons(comp.suiv.lex.type) Then
                             Erreur("La valeur de retour du " + comp.lex.value.ToString + " du match est erronée")
                             Return False
                         End If
@@ -406,19 +413,14 @@ Public Class Form1
         'Decoupage en arbre par priorité + Analyse Lexicale
         Dim searcher
         s = s.Trim()
-
-
-        If s = "" Then
-            Erreur("vide interdit")
-            Return False
-        End If
+        If s = "" Then Return False
 
         '0 Supprimer les parentheses aux extremités
         If (s(0) = "(" And s(s.Length - 1) = ")") Then
             l.value = "()"
             l.type = Lexeme.LType.GENERIC
 
-            Decoupage(s.Substring(1, s.Length - 2), AddLexeme(l))
+            If Not Decoupage(s.Substring(1, s.Length - 2), AddLexeme(l)) Then Return False
             SetParentheseType(l)
             Return True
         End If
@@ -445,9 +447,7 @@ Public Class Form1
                 Return False
             End If
 
-            Decoupage(s.Substring(i + 1), AddLexeme(l))
-
-            Return True
+            Return Decoupage(s.Substring(i + 1), AddLexeme(l))
         End If
 
         '1 Chercher les mots connus : function
@@ -496,19 +496,19 @@ Public Class Form1
             l.value = "match"
             l.type = Lexeme.LType.CONS
 
-            Dim fin = Recherche("matched", s.Substring(searcher + 5))
+            Dim fin = Recherche("matched", s.Substring(searcher + 5)) + 5
             If (fin = -1) Then
                 Erreur("match necessite un matched")
                 Return False
             End If
-            Dim w = Recherche("with", s.Substring(searcher, fin))
+            Dim w = Recherche("with", s.Substring(searcher + 5, fin))
             If (w = -1) Then
                 Erreur("match necessite un with")
                 Return False
             End If
-            If Not Decoupage(s.Substring(searcher + 5, w - 5), AddLexeme(l)) Then Return False
+            If Not Decoupage(s.Substring(searcher + 5, w), AddLexeme(l)) Then Return False
 
-            Dim si = searcher + w + 4
+            Dim si = searcher + w + 9
             While Estvide(s(si))
                 si += 1
             End While
@@ -597,6 +597,7 @@ Public Class Form1
             Case "_"
                 l.value = "_"
                 l.type = Lexeme.LType.matchall
+                Return True
         End Select
         If EstInt(s(0)) Then
             If (s.IndexOf(".") = -1) Then
@@ -634,13 +635,13 @@ Public Class Form1
                         Return False
                     End If
                 Next
-                If GetVar(s) Is Nothing Then
+                If GetVar(s).value Is Nothing Then
                     Erreur("Variable non attribuée : " + s)
                     Return False
                 End If
                 l.value = s
                 If GetVarType(s) = Lexeme.LType.Lfun Then
-                    Decoupage(l.value, AddLexeme(l))
+                    If Not Decoupage(l.value, AddLexeme(l)) Then Return False
                     l.value = "()"
                     SetParentheseType(l)
                 Else
@@ -650,7 +651,7 @@ Public Class Form1
             Else
                 Dim appel = s.Split(" ")
                 Dim fun = GetVar(appel(0))
-                If fun Is Nothing Then
+                If fun.value Is Nothing Then
                     Erreur("Variable non attribuée : " + s)
                     Return False
                 End If
@@ -675,7 +676,6 @@ Public Class Form1
     End Function
 
     Private Function Predecoupage(s As String)
-        Dim varname = "aaaa"
         Dim last = stock
 
         Dim a = s.IndexOf("""")
@@ -774,9 +774,7 @@ Public Class Form1
         Dim index As VarPerso = stock
         While index.suiv IsNot Nothing
             If index.suiv.nom = s Then
-                Dim temp = index.suiv
-                index.suiv = index.suiv.suiv
-                Return temp.value
+                Return index.suiv.value
             End If
             index = index.suiv
         End While
