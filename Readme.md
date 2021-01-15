@@ -1,6 +1,13 @@
-<b>Projet Logiciel : Interpreteur CAML simplifié</b>
+<h1>Interpreteur CAML simplifié</h1>
 
-Pour compiler (sous Windows obligatoirement):
+<h2> Présentation </h2>
+Ce programme a été réalisé dans le cadre d'un cours de Programmation, en L2.
+
+Il s'agit d'un interpreteur d'un langage OCAML simplifié.
+
+
+<h2> Compilation </h2>
+<i>Il s'agit d'une application .Net, donc compilable et executable sous Windows.</i>
 
 Telecharger le projet et le décompresser
 
